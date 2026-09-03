@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FlyVenture — Book flights, hotels, cabs & more</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter','ui-sans-serif','system-ui'] },
+        colors: { brand: { 50:'#eef4ff',100:'#dfe9ff',500:'#3466e0',600:'#1e56d6',700:'#1745ab',900:'#0f2a63' } }
+      }
+    }
+  }
+</script>
+<style>
+  html{scroll-behavior:smooth;}
+  body{font-family:'Inter',ui-sans-serif,system-ui;}
+  .line-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+  ::-webkit-scrollbar{height:8px;width:8px;}
+  ::-webkit-scrollbar-thumb{background:#d1d9e6;border-radius:8px;}
+  .tab-btn.active{color:#1e56d6;border-color:#1e56d6;}
+  .fade-in{animation:fadeIn .25s ease-out;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  input:focus, select:focus, textarea:focus{outline:none;box-shadow:0 0 0 3px rgba(30,86,214,0.12);border-color:#1e56d6;}
+  html{transition:background-color .2s ease;}
+
+  /* =========================================================
+     DARK MODE — CSS-variable-free override layer.
+     Applied whenever <html> carries the .dark class, so every
+     existing Tailwind utility class gets a dark-friendly repaint
+     without needing dark: variants sprinkled through every template.
+     ========================================================= */
+  .dark body{background-color:#0b1220;color:#e2e8f0;}
+  .dark .bg-white{background-color:#111a2e;}
+  .dark .bg-white\/95{background-color:rgba(17,26,46,.92);}
+  .dark .bg-slate-50{background-color:#0b1220;}
+  .dark .bg-slate-900{background-color:#05070d;}
+  .dark .bg-brand-50{background-color:rgba(52,102,224,.12);}
+  .dark .bg-brand-100{background-color:rgba(52,102,224,.18);}
+  .dark .text-slate-900{color:#f1f5f9;}
+  .dark .text-slate-800{color:#e2e8f0;}
+  .dark .text-slate-700{color:#cbd5e1;}
+  .dark .text-slate-600{color:#b6c2d4;}
+  .dark .text-slate-500{color:#94a3b8;}
+  .dark .text-slate-400{color:#7688a0;}
+  .dark .text-slate-300{color:#94a3b8;}
+  .dark .text-brand-700{color:#7ea3f5;}
+  .dark .text-brand-600{color:#6f9bf7;}
+  .dark .border-slate-100{border-color:#1e293b;}
+  .dark .border-slate-200{border-color:#243147;}
+  .dark .border-brand-100{border-color:rgba(52,102,224,.35);}
+  .dark .border-brand-200{border-color:rgba(52,102,224,.35);}
+  .dark .hover\:bg-slate-50:hover{background-color:#17233c;}
+  .dark .hover\:bg-brand-50:hover{background-color:rgba(52,102,224,.16);}
+  .dark ::-webkit-scrollbar-thumb{background:#2a3a56;}
+  .dark input, .dark select, .dark textarea{background-color:transparent;color:#e2e8f0;}
+  .dark input::placeholder{color:#64748b;}
+  .dark .shadow-sm, .dark .shadow-md, .dark .shadow-lg, .dark .shadow-xl{box-shadow:0 4px 16px rgba(0,0,0,.35);}
+  .dark .bg-slate-100{background-color:#1e293b;}
+  .dark ::-webkit-scrollbar-thumb{background:#334155;}
+
+  .avail-badge{display:inline-flex;align-items:center;gap:4px;}
+  .avail-dot{width:6px;height:6px;border-radius:50%;background:#f59e0b;display:inline-block;}
+  .theme-toggle{transition:transform .25s ease;}
+  .theme-toggle:active{transform:scale(0.85) rotate(20deg);}
+  #scroll-top-btn{transition:opacity .2s ease, transform .2s ease;}
+  .chip{cursor:pointer;user-select:none;}
+</style>
+</head>
+<body class="bg-white text-slate-800 transition-colors duration-300">
+<div id="app"></div>
+<button id="scroll-top-btn" aria-label="Scroll to top" class="fixed bottom-6 right-6 z-40 w-11 h-11 rounded-full bg-brand-600 hover:bg-brand-700 text-white shadow-lg flex items-center justify-center opacity-0 pointer-events-none translate-y-2">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+
+<script>
+/* =========================================================
+   MOCK DATA
+   ========================================================= */
+// Real, theme-matched photography via LoremFlickr (keyword-based, Creative Commons licensed).
+// `variant` lets the same subject (e.g. a hotel) show several different real photos in a gallery
+// while staying deterministic (same seed+variant always returns the same photo, no reshuffling on reload).
+function hashStr(s){ let h=0; for(let i=0;i<s.length;i++){ h = (h*31 + s.charCodeAt(i)) >>> 0; } return h; }
+const img = (seed,w=800,h=600,variant=0) => {
+  const lock = (hashStr(seed+'::'+variant) % 9000) + 1;
+  // keywords stay comma-separated and unencoded — LoremFlickr reads the commas as OR-matched tags
+  return `https://loremflickr.com/${w}/${h}/${seed}?lock=${lock}`;
+};
+
+// Deterministic "live availability" indicator so numbers don't reshuffle on every render.
+function availabilityFor(id, max=12, min=2){
+  const h = hashStr('avail::'+id);
+  return (h % (max-min+1)) + min;
+}
+
+const CONTINENT_ORDER = ['Asia','Europe','Africa','Oceania','North America','South America'];
+
+const DESTINATIONS = [
+  // Asia
+  {name:'Goa', country:'India', continent:'Asia', price:2499, seed:'goa,beach,india'},
+  {name:'Dubai', country:'UAE', continent:'Asia', price:8999, seed:'dubai,skyline'},
+  {name:'Bali', country:'Indonesia', continent:'Asia', price:12999, seed:'bali,temple'},
+  {name:'Singapore', country:'Singapore', continent:'Asia', price:7999, seed:'singapore,marina'},
+  {name:'Thailand', country:'Thailand', continent:'Asia', price:9999, seed:'thailand,longtail,boat'},
+  {name:'Maldives', country:'Maldives', continent:'Asia', price:15999, seed:'maldives,overwater,bungalow'},
+  {name:'Tokyo', country:'Japan', continent:'Asia', price:18999, seed:'tokyo,shibuya'},
+  {name:'Seoul', country:'South Korea', continent:'Asia', price:17999, seed:'seoul,palace'},
+  // Europe
+  {name:'Paris', country:'France', continent:'Europe', price:21999, seed:'paris,eiffeltower'},
+  {name:'Rome', country:'Italy', continent:'Europe', price:23999, seed:'rome,colosseum'},
+  {name:'London', country:'United Kingdom', continent:'Europe', price:26999, seed:'london,bigben'},
+  {name:'Amsterdam', country:'Netherlands', continent:'Europe', price:22999, seed:'amsterdam,canal'},
+  // Africa
+  {name:'Cairo', country:'Egypt', continent:'Africa', price:19999, seed:'cairo,pyramids'},
+  {name:'Cape Town', country:'South Africa', continent:'Africa', price:27999, seed:'capetown,tablemountain'},
+  {name:'Nairobi', country:'Kenya', continent:'Africa', price:24999, seed:'nairobi,safari'},
+  {name:'Marrakesh', country:'Morocco', continent:'Africa', price:20999, seed:'marrakesh,morocco'},
+  // Oceania
+  {name:'Sydney', country:'Australia', continent:'Oceania', price:32999, seed:'sydney,operahouse'},
+  {name:'Auckland', country:'New Zealand', continent:'Oceania', price:34999, seed:'auckland,newzealand'},
+  // North America
+  {name:'New York', country:'USA', continent:'North America', price:36999, seed:'newyork,skyline'},
+  {name:'Los Angeles', country:'USA', continent:'North America', price:35999, seed:'losangeles,hollywood'},
+  {name:'Toronto', country:'Canada', continent:'North America', price:33999, seed:'toronto,canada'},
+  // South America
+  {name:'Rio de Janeiro', country:'Brazil', continent:'South America', price:38999, seed:'riodejaneiro,christtheredeemer'},
+  {name:'Buenos Aires', country:'Argentina', continent:'South America', price:37999, seed:'buenosaires,argentina'},
+];
+
+/* =========================================================
+   FLIGHTS — worldwide airport list, cabin classes & airline pool
+   Flights are generated on demand for any From/To pair (see
+   generateFlights below) so every continent-to-continent route works.
+   ========================================================= */
+const AIRPORTS = [
+  {code:'DEL', city:'New Delhi', country:'India', continent:'Asia'},
+  {code:'BOM', city:'Mumbai', country:'India', continent:'Asia'},
+  {code:'BLR', city:'Bengaluru', country:'India', continent:'Asia'},
+  {code:'GOI', city:'Goa', country:'India', continent:'Asia'},
+  {code:'DXB', city:'Dubai', country:'UAE', continent:'Asia'},
+  {code:'SIN', city:'Singapore', country:'Singapore', continent:'Asia'},
+  {code:'BKK', city:'Bangkok', country:'Thailand', continent:'Asia'},
+  {code:'DPS', city:'Bali (Denpasar)', country:'Indonesia', continent:'Asia'},
+  {code:'MLE', city:'Malé', country:'Maldives', continent:'Asia'},
+  {code:'HND', city:'Tokyo', country:'Japan', continent:'Asia'},
+  {code:'ICN', city:'Seoul', country:'South Korea', continent:'Asia'},
+  {code:'CDG', city:'Paris', country:'France', continent:'Europe'},
+  {code:'FCO', city:'Rome', country:'Italy', continent:'Europe'},
+  {code:'LHR', city:'London', country:'United Kingdom', continent:'Europe'},
+  {code:'AMS', city:'Amsterdam', country:'Netherlands', continent:'Europe'},
+  {code:'CAI', city:'Cairo', country:'Egypt', continent:'Africa'},
+  {code:'CPT', city:'Cape Town', country:'South Africa', continent:'Africa'},
+  {code:'NBO', city:'Nairobi', country:'Kenya', continent:'Africa'},
+  {code:'RAK', city:'Marrakesh', country:'Morocco', continent:'Africa'},
+  {code:'SYD', city:'Sydney', country:'Australia', continent:'Oceania'},
+  {code:'AKL', city:'Auckland', country:'New Zealand', continent:'Oceania'},
+  {code:'JFK', city:'New York', country:'USA', continent:'North America'},
+  {code:'LAX', city:'Los Angeles', country:'USA', continent:'North America'},
+  {code:'YYZ', city:'Toronto', country:'Canada', continent:'North America'},
+  {code:'GIG', city:'Rio de Janeiro', country:'Brazil', continent:'South America'},
+  {code:'EZE', city:'Buenos Aires', country:'Argentina', continent:'South America'},
+];
+function airportByCode(code){ return AIRPORTS.find(a=>a.code===code) || AIRPORTS[0]; }
+function airportOptions(selected){
+  return CONTINENT_ORDER.map(cont=>{
+    const opts = AIRPORTS.filter(a=>a.continent===cont)
+      .map(a=>`<option value="${a.code}" ${a.code===selected?'selected':''}>${a.city} (${a.code})</option>`).join('');
+    return opts ? `<optgroup label="${cont}">${opts}</optgroup>` : '';
+  }).join('');
+}
+function destinationOptions(selected){
+  return CONTINENT_ORDER.map(cont=>{
+    const opts = DESTINATIONS.filter(d=>d.continent===cont)
+      .map(d=>`<option value="${d.name}" ${d.name===selected?'selected':''}>${d.name}, ${d.country}</option>`).join('');
+    return opts ? `<optgroup label="${cont}">${opts}</optgroup>` : '';
+  }).join('');
+}
+
+const CABIN_CLASSES = [
+  {id:'economy', label:'Economy', multiplier:1},
+  {id:'premium', label:'Premium Economy', multiplier:1.6},
+  {id:'business', label:'Business', multiplier:2.8},
+  {id:'first', label:'First Class', multiplier:4.5},
+];
+
+const AIRLINE_POOL = [
+  {name:'IndiGo', color:'#1e56d6'}, {name:'Air India', color:'#c0392b'}, {name:'Vistara', color:'#7d3c98'},
+  {name:'SpiceJet', color:'#d35400'}, {name:'Emirates', color:'#b8860b'}, {name:'Akasa Air', color:'#0f766e'},
+  {name:'Qatar Airways', color:'#5b21b6'}, {name:'Singapore Airlines', color:'#0369a1'},
+  {name:'British Airways', color:'#1e3a8a'}, {name:'Lufthansa', color:'#a16207'}, {name:'Qantas', color:'#dc2626'},
+  {name:'Turkish Airlines', color:'#b91c1c'},
+];
+
+// Circular distance between continents (0 = same continent, up to 3 = furthest apart) —
+// used as a simple, deterministic stand-in for real-world flight distance.
+function continentGap(c1,c2){
+  if(c1===c2) return 0;
+  const i1=CONTINENT_ORDER.indexOf(c1), i2=CONTINENT_ORDER.indexOf(c2);
+  const raw = Math.abs(i1-i2);
+  return Math.min(raw, CONTINENT_ORDER.length-raw);
+}
+function durationMinutes(s){ const m=s.match(/(\d+)h\s*(\d+)m/); return m ? (+m[1]*60 + +m[2]) : 0; }
+
+// Deterministically generates a realistic-looking set of flights for any From/To/cabin
+// combination, with duration, stops and pricing scaled by how far apart the continents are —
+// so short regional hops stay non-stop and cheap, while intercontinental routes get layovers
+// and higher fares. Regenerating with the same inputs always returns the same flights, which
+// lets booking (itemAndPrice) recreate a specific flight from its id without storing state.
+function generateFlights(fromCode, toCode, cabinId){
+  const from = airportByCode(fromCode), to = airportByCode(toCode);
+  const cabin = CABIN_CLASSES.find(c=>c.id===cabinId) || CABIN_CLASSES[0];
+  const gap = continentGap(from.continent, to.continent);
+  const baseHours = gap===0 ? 1.5 : [0,5.5,10,15][gap];
+  const layoverHubs = ['Dubai','Singapore','Doha','Istanbul','Amsterdam','Bangkok'];
+  const count = 6;
+  const list = [];
+  for(let i=0;i<count;i++){
+    const h = hashStr(`${fromCode}-${toCode}-${cabinId}-${i}`);
+    const airline = AIRLINE_POOL[h % AIRLINE_POOL.length];
+    const durHours = baseHours + (h % 5) * 0.6;
+    const stopsCount = fromCode===toCode ? 0 : gap===0 ? (h%4===0?1:0) : gap===1 ? (h%3===0?0:1) : (h%3===0?1:2);
+    const depH = 5 + (h % 17), depM = (h*7) % 60;
+    const dep = `${String(depH).padStart(2,'0')}:${String(depM).padStart(2,'0')}`;
+    const arrTotal = depH*60 + depM + Math.round(durHours*60);
+    const arr = `${String(Math.floor(arrTotal/60)%24).padStart(2,'0')}:${String(arrTotal%60).padStart(2,'0')}`;
+    const hrs = Math.floor(durHours), mins = Math.round((durHours-hrs)*60);
+    const layover = stopsCount>0 ? layoverHubs[h % layoverHubs.length] : null;
+    const basePrice = 3500 + gap*6500 + (h%9)*450;
+    const price = Math.round(basePrice*cabin.multiplier/50)*50;
+    list.push({
+      id:`f-${fromCode}-${toCode}-${cabinId}-${i}`,
+      airline: airline.name, color: airline.color,
+      dep, arr, duration:`${hrs}h ${mins}m`,
+      stopsCount,
+      stops: stopsCount===0?'Non-stop':stopsCount===1?`1 stop · ${layover}`:`2 stops · via ${layover}`,
+      cabin: cabin.label,
+      baggage: cabinId==='economy' ? '15 kg check-in + 7 kg cabin' : cabinId==='premium' ? '25 kg check-in + 10 kg cabin' : '32 kg check-in + 12 kg cabin',
+      price,
+      from: from.city, fromCode, to: to.city, toCode,
+    });
+  }
+  return list;
+}
+
+const AMENITY_ICONS = {Pool:'🏊',Spa:'💆',WiFi:'📶',Breakfast:'🍳',Gym:'🏋️',Parking:'🅿️',AC:'❄️',Bar:'🍸'};
+
+const HOTELS = [
+  {id:'h1', name:'Taj Exotica Resort & Spa', location:'Goa, India', rating:4.6, reviews:1204, price:12500, amenities:['Pool','Spa','WiFi','Breakfast'], seed:'resort,swimmingpool', type:'Resort'},
+  {id:'h2', name:'The Leela Palace', location:'New Delhi, India', rating:4.7, reviews:2109, price:18000, amenities:['Pool','Spa','WiFi','Breakfast'], seed:'luxury,hotel,palace', type:'Luxury'},
+  {id:'h3', name:'JW Marriott Mumbai', location:'Mumbai, India', rating:4.5, reviews:1809, price:16500, amenities:['Pool','Spa','WiFi','Breakfast'], seed:'hotel,skyline,city', type:'Business'},
+  {id:'h4', name:'Atlantis The Palm', location:'Dubai, UAE', rating:4.8, reviews:3421, price:24500, amenities:['Pool','Spa','WiFi','Bar'], seed:'dubai,luxury,resort', type:'Resort'},
+  {id:'h5', name:'Alila Villas Uluwatu', location:'Bali, Indonesia', rating:4.9, reviews:987, price:21000, amenities:['Pool','WiFi','Breakfast'], seed:'bali,villa,pool', type:'Villa'},
+  {id:'h6', name:'Marina Bay Sands', location:'Singapore', rating:4.7, reviews:5120, price:27500, amenities:['Pool','WiFi','Bar','Gym'], seed:'singapore,hotel,skyline', type:'Luxury'},
+];
+
+const PACKAGES = [
+  {id:'p1', destination:'Bali, Indonesia', name:'Bali Bliss Getaway', days:5, price:34999, rating:4.7,
+    desc:'Temples, rice terraces and beach sunsets — a relaxed introduction to Bali.',
+    hotel:'4-star beachfront resort', transport:'Private AC car with driver', activitiesList:['Ubud temple tour','Snorkeling trip','Rice terrace trek'],
+    inclusions:['4 nights accommodation','Daily breakfast','Airport transfers','All sightseeing as per itinerary'],
+    exclusions:['International flights','Visa fees','Personal expenses','Travel insurance'],
+    cancellation:'Free cancellation up to 7 days before departure. 50% refund within 3–7 days. No refund within 72 hours.',
+    seed:'bali,riceterrace',
+    itinerary:[
+      {day:1,title:'Arrival in Bali',desc:'Airport pickup and transfer to your resort. Evening free to relax by the beach.'},
+      {day:2,title:'Ubud Temple & Rice Terrace Tour',desc:'Visit Tegalalang rice terraces, Tirta Empul temple and the Ubud art market.'},
+      {day:3,title:'Snorkeling at Nusa Penida',desc:'Full-day boat trip with snorkeling stops and a beachside lunch.'},
+      {day:4,title:'Free Day / Optional Spa',desc:'Leisure day to explore on your own, or book an optional spa package.'},
+      {day:5,title:'Departure',desc:'Check out and transfer to the airport for your flight home.'},
+    ]},
+  {id:'p2', destination:'Dubai, UAE', name:'Dubai City Highlights', days:4, price:41999, rating:4.6,
+    desc:'Skyscrapers, desert safaris and world-class shopping in four action-packed days.',
+    hotel:'4-star hotel in Downtown Dubai', transport:'Private airport transfers + shared tours', activitiesList:['Burj Khalifa entry','Desert safari with BBQ dinner','Dubai Marina cruise'],
+    inclusions:['3 nights accommodation','Daily breakfast','Desert safari with dinner','Burj Khalifa (124th floor) tickets'],
+    exclusions:['International flights','Visa fees','Lunches and dinners (except mentioned)','Tips'],
+    cancellation:'Free cancellation up to 5 days before departure. 50% refund within 2–5 days. No refund within 48 hours.',
+    seed:'dubai,desert,safari',
+    itinerary:[
+      {day:1,title:'Arrival & Marina Cruise',desc:'Check in, evening dhow cruise along Dubai Marina with dinner.'},
+      {day:2,title:'City Tour & Burj Khalifa',desc:'Visit Dubai Museum, Jumeirah Mosque and the Burj Khalifa observation deck.'},
+      {day:3,title:'Desert Safari',desc:'Dune bashing, camel ride, and a BBQ dinner under the stars with live entertainment.'},
+      {day:4,title:'Departure',desc:'Free morning for shopping, then transfer to the airport.'},
+    ]},
+  {id:'p3', destination:'Thailand', name:'Bangkok & Phuket Escape', days:6, price:38999, rating:4.5,
+    desc:'City culture in Bangkok followed by island time on the beaches of Phuket.',
+    hotel:'3-star hotels, city + beachfront', transport:'Domestic flight + private transfers', activitiesList:['Grand Palace tour','Phi Phi Islands boat trip','Phuket old town walk'],
+    inclusions:['5 nights accommodation','Daily breakfast','Bangkok–Phuket domestic flight','Phi Phi Islands day trip'],
+    exclusions:['International flights','Visa fees','Personal expenses','Optional activities'],
+    cancellation:'Free cancellation up to 7 days before departure. 50% refund within 3–7 days. No refund within 72 hours.',
+    seed:'thailand,island,beach',
+    itinerary:[
+      {day:1,title:'Arrival in Bangkok',desc:'Airport pickup and check-in. Evening at leisure.'},
+      {day:2,title:'Bangkok City Tour',desc:'Grand Palace, Wat Pho and a river cruise along the Chao Phraya.'},
+      {day:3,title:'Fly to Phuket',desc:'Morning flight to Phuket, check in to your beachfront hotel.'},
+      {day:4,title:'Phi Phi Islands Day Trip',desc:'Speedboat trip to Phi Phi Islands with snorkeling and lunch on the beach.'},
+      {day:5,title:'Free Day in Phuket',desc:'Relax at the resort or explore Phuket Old Town on your own.'},
+      {day:6,title:'Departure',desc:'Check out and transfer to the airport.'},
+    ]},
+  {id:'p4', destination:'Singapore', name:'Singapore Family Fun', days:4, price:45999, rating:4.8,
+    desc:'Gardens, theme parks and skyline views — built for families and first-timers.',
+    hotel:'4-star hotel near Marina Bay', transport:'Airport transfers + metro pass', activitiesList:['Universal Studios Singapore','Gardens by the Bay','Night Safari'],
+    inclusions:['3 nights accommodation','Daily breakfast','Universal Studios tickets','Gardens by the Bay entry'],
+    exclusions:['International flights','Visa fees','Meals other than breakfast','Personal expenses'],
+    cancellation:'Free cancellation up to 5 days before departure. 50% refund within 2–5 days. No refund within 48 hours.',
+    seed:'singapore,gardens',
+    itinerary:[
+      {day:1,title:'Arrival & Gardens by the Bay',desc:'Check in, evening visit to Gardens by the Bay light show.'},
+      {day:2,title:'Universal Studios Singapore',desc:'Full day at the theme park on Sentosa Island.'},
+      {day:3,title:'City Tour & Night Safari',desc:'Morning city tour, evening at the Singapore Night Safari.'},
+      {day:4,title:'Departure',desc:'Free morning, then transfer to the airport.'},
+    ]},
+];
+
+const ACTIVITY_CATEGORIES = ['Adventure','Food','Culture','Sightseeing','Nature','Family','Photography'];
+const ACTIVITIES = [
+  {id:'a1', name:'Scuba Diving Experience', location:'Goa, India', category:'Adventure', duration:'3 hours', rating:4.6, price:2999, seed:'scuba,coral,reef'},
+  {id:'a2', name:'Street Food Walking Tour', location:'Bangkok, Thailand', category:'Food', duration:'2.5 hours', rating:4.8, price:1499, seed:'streetfood,market'},
+  {id:'a3', name:'Ubud Temple & Culture Tour', location:'Bali, Indonesia', category:'Culture', duration:'Full day', rating:4.7, price:3499, seed:'bali,temple,culture'},
+  {id:'a4', name:'Burj Khalifa Observation Deck', location:'Dubai, UAE', category:'Sightseeing', duration:'1.5 hours', rating:4.7, price:5499, seed:'burjkhalifa,dubai'},
+  {id:'a5', name:'Rainforest Canopy Trek', location:'Langkawi, Malaysia', category:'Nature', duration:'4 hours', rating:4.5, price:2199, seed:'rainforest,canopy,jungle'},
+  {id:'a6', name:'Kids Aquarium & Play Zone', location:'Singapore', category:'Family', duration:'3 hours', rating:4.6, price:1899, seed:'aquarium,fish'},
+  {id:'a7', name:'Sunrise Photography Walk', location:'Santorini, Greece', category:'Photography', duration:'2 hours', rating:4.9, price:1999, seed:'sunrise,coastline'},
+  {id:'a8', name:'Desert Safari with BBQ Dinner', location:'Dubai, UAE', category:'Adventure', duration:'6 hours', rating:4.7, price:4499, seed:'desert,dunes,camel'},
+];
+
+const AIRLINES = [
+  {name:'IndiGo', color:'#1e56d6'}, {name:'Air India', color:'#c0392b'}, {name:'Vistara', color:'#7d3c98'},
+  {name:'SpiceJet', color:'#d35400'}, {name:'Emirates', color:'#b8860b'}, {name:'Akasa Air', color:'#0f766e'},
+];
+const FLIGHTS = AIRLINES.map((a,i)=>({
+  id:'f'+(i+1), airline:a.name, color:a.color,
+  dep: `${String(6+i*2).padStart(2,'0')}:${i%2?'15':'40'}`,
+  arr: `${String((8+i*2)%24).padStart(2,'0')}:${i%2?'55':'20'}`,
+  duration: `${2+(i%3)}h ${i*7%60}m`,
+  stops: i%3===0?'Non-stop':'1 stop',
+  baggage: '15 kg check-in + 7 kg cabin',
+  price: 4200 + i*850,
+}));
+
+const CABS = [
+  {id:'c1', name:'Hatchback (Swift / i10)', seats:4, ac:true, price:899, seed:'car,hatchback', type:'Economy'},
+  {id:'c2', name:'Sedan (Dzire / Etios)', seats:4, ac:true, price:1299, seed:'car,sedan', type:'Comfort'},
+  {id:'c3', name:'SUV (Innova / Ertiga)', seats:6, ac:true, price:2199, seed:'car,suv', type:'SUV'},
+  {id:'c4', name:'Luxury Sedan (Camry)', seats:4, ac:true, price:3499, seed:'car,luxurysedan', type:'Luxury'},
+];
+
+const GUIDES = [
+  {id:'g1', name:'Rahul Mehta', location:'Jaipur, India', languages:['English','Hindi'], experience:'8 years', rating:4.9, price:1800, unit:'day', seed:'indianman,portrait',
+    about:'Heritage-focused guide specialising in Rajasthan\'s forts, palaces and local craft traditions.', specialities:['Heritage walks','Photography spots','Local cuisine']},
+  {id:'g2', name:'Made Wirawan', location:'Ubud, Bali', languages:['English','Indonesian'], experience:'6 years', rating:4.8, price:1500, unit:'day', seed:'indonesianman,portrait',
+    about:'Grew up in Ubud and guides small groups through temples, rice terraces and local villages.', specialities:['Temple tours','Nature treks','Culture']},
+  {id:'g3', name:'Sarah Thompson', location:'Dubai, UAE', languages:['English','Arabic'], experience:'5 years', rating:4.7, price:220, unit:'hour', seed:'woman,portrait,smiling',
+    about:'Licensed city guide covering Old Dubai souks, modern architecture and desert excursions.', specialities:['City tours','Desert trips','Shopping guidance']},
+  {id:'g4', name:'Kenji Sato', location:'Bangkok, Thailand', languages:['English','Thai','Japanese'], experience:'10 years', rating:4.9, price:1600, unit:'day', seed:'asianman,portrait',
+    about:'Former chef turned guide — brings a food-first lens to temples, markets and canal tours.', specialities:['Food tours','Temples','River tours']},
+];
+
+/* =========================================================
+   APP STATE  (in-memory only — resets on page reload)
+   ========================================================= */
+const state = {
+  user: null,               // {name, email}
+  bookings: [],             // completed bookings
+  currentBooking: null,     // {type, itemId, step, traveller:{}, price, meta}
+  homeTab: 'flights',
+  darkMode: window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
+  flightSearch: { from:'DEL', to:'BOM', travellers:1, cabinClass:'economy' },
+  filters: {
+    hotel: {maxPrice:30000, minRating:0, amenities:[], city:'All', types:[]},
+    flightSort:'recommended',
+    packageCity:'All',
+  },
+};
+
+/* =========================================================
+   COMPANY / LEADERSHIP
+   ========================================================= */
+const LEADERSHIP = [
+  {name:'Jashan Singh', role:'Chief Executive Officer', photo:'data:image/jpeg;base64,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',
+    bio:'Sets FlyVenture\'s product and growth direction, with a focus on making multi-service trip planning feel effortless for every traveller.'},
+];
+
+/* =========================================================
+   HELPERS
+   ========================================================= */
+function money(n){ return '₹' + n.toLocaleString('en-IN'); }
+function stars(rating){
+  const full = Math.round(rating);
+  return '★'.repeat(full) + '☆'.repeat(5-full);
+}
+function go(hash){ location.hash = hash; window.scrollTo({top:0,behavior:'smooth'}); }
+function qs(sel,root=document){ return root.querySelector(sel); }
+function qsa(sel,root=document){ return [...root.querySelectorAll(sel)]; }
+function bookingId(){ return 'TRV' + Math.floor(100000 + Math.random()*899999); }
+function applyTheme(){ document.documentElement.classList.toggle('dark', state.darkMode); }
+function toggleDarkMode(){ state.darkMode = !state.darkMode; applyTheme(); render(); }
+
+/* =========================================================
+   HEADER / FOOTER
+   ========================================================= */
+function renderHeader(){
+  const nav = [
+    ['Flights','#/flights'], ['Hotels','#/hotels'], ['Cabs','#/cabs'],
+    ['Packages','#/packages'], ['Activities','#/activities'],
+  ];
+  return `
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-100">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <a href="#/" class="flex items-center gap-1.5 text-xl font-extrabold text-brand-700 shrink-0">
+        <svg width="26" height="26" viewBox="0 0 32 32" fill="none" class="shrink-0">
+          <circle cx="16" cy="16" r="14.5" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 6l4 9-4 3-4-3 4-9z" fill="currentColor"/>
+          <path d="M16 26l-4-9 4-3 4 3-4 9z" fill="currentColor" opacity=".35"/>
+        </svg>
+        FlyVenture
+      </a>
+      <nav class="hidden lg:flex items-center gap-7 text-sm font-medium text-slate-600">
+        ${nav.map(([label,href])=>`<a href="${href}" class="hover:text-brand-600 transition-colors">${label}</a>`).join('')}
+        <div class="relative group">
+          <button class="flex items-center gap-1 hover:text-brand-600 transition-colors">More
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+          <div class="absolute left-0 top-full pt-2 hidden group-hover:block">
+            <div class="w-52 bg-white rounded-xl shadow-lg border border-slate-100 py-2">
+              ${[['Tour Guides','#/guides'],['Bus Tickets','#/more/bus'],['Train Tickets','#/more/train'],['Car Rentals','#/more/car-rentals'],['Airport Transfers','#/more/airport-transfers'],['About Us','#/about']]
+                .map(([l,h])=>`<a href="${h}" class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-brand-600">${l}</a>`).join('')}
+            </div>
+          </div>
+        </div>
+      </nav>
+      <div class="flex items-center gap-3 shrink-0">
+        <button data-action="toggle-theme" aria-label="Toggle dark mode" title="Toggle dark mode" class="theme-toggle w-9 h-9 rounded-full border border-slate-200 flex items-center justify-center text-slate-600 hover:text-brand-600 hover:border-brand-300 transition-colors">
+          ${state.darkMode
+            ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="4.5" stroke="currentColor" stroke-width="2"/><path d="M12 2v2.2M12 19.8V22M4.2 4.2l1.55 1.55M18.25 18.25l1.55 1.55M2 12h2.2M19.8 12H22M4.2 19.8l1.55-1.55M18.25 5.75l1.55-1.55" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`
+            : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 14.5A8.5 8.5 0 119.5 4a7 7 0 0010.5 10.5z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>`}
+        </button>
+        ${state.user ? `
+          <div class="relative group">
+            <button class="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <span class="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-semibold">${state.user.name[0]}</span>
+              <span class="hidden sm:inline">${state.user.name.split(' ')[0]}</span>
+            </button>
+            <div class="absolute right-0 top-full pt-2 hidden group-hover:block">
+              <div class="w-44 bg-white rounded-xl shadow-lg border border-slate-100 py-2">
+                <a href="#/account" class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">My Account</a>
+                <a href="#/admin" class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Admin Panel</a>
+                <button data-action="logout" class="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50">Logout</button>
+              </div>
+            </div>
+          </div>
+        ` : `
+          <button data-action="open-login" class="hidden sm:block text-sm font-semibold text-brand-700 border border-brand-200 rounded-full px-5 py-2 hover:bg-brand-50 transition-colors">Login / Sign up</button>
+          <button data-action="open-login" class="sm:hidden text-sm font-semibold text-brand-700">Login</button>
+        `}
+        <button data-action="toggle-mobile-nav" class="lg:hidden p-2 text-slate-600">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="mobile-nav" class="hidden lg:hidden border-t border-slate-100 px-4 py-3 space-y-1">
+      ${nav.map(([label,href])=>`<a href="${href}" class="block py-2 text-sm font-medium text-slate-600">${label}</a>`).join('')}
+      <a href="#/guides" class="block py-2 text-sm font-medium text-slate-600">Tour Guides</a>
+      <a href="#/more/bus" class="block py-2 text-sm font-medium text-slate-600">Bus Tickets</a>
+      <a href="#/more/train" class="block py-2 text-sm font-medium text-slate-600">Train Tickets</a>
+      <a href="#/more/car-rentals" class="block py-2 text-sm font-medium text-slate-600">Car Rentals</a>
+      <a href="#/more/airport-transfers" class="block py-2 text-sm font-medium text-slate-600">Airport Transfers</a>
+      <a href="#/about" class="block py-2 text-sm font-medium text-slate-600">About Us</a>
+    </div>
+  </header>`;
+}
+
+function renderFooter(){
+  return `
+  <footer class="bg-slate-900 text-slate-300 mt-20">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-12 grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
+      <div class="col-span-2 md:col-span-1">
+        <div class="text-xl font-extrabold text-white mb-3 flex items-center gap-2">
+          <svg width="22" height="22" viewBox="0 0 32 32" fill="none" class="shrink-0">
+            <circle cx="16" cy="16" r="14.5" stroke="currentColor" stroke-width="2"/>
+            <path d="M16 6l4 9-4 3-4-3 4-9z" fill="currentColor"/>
+            <path d="M16 26l-4-9 4-3 4 3-4 9z" fill="currentColor" opacity=".5"/>
+          </svg>
+          FlyVenture
+        </div>
+        <p class="text-slate-400 leading-relaxed">Flights, hotels, cabs, tours and experiences — all in one place.</p>
+      </div>
+      <div>
+        <div class="font-semibold text-white mb-3">Book</div>
+        <ul class="space-y-2 text-slate-400">
+          <li><a href="#/flights" class="hover:text-white">Flights</a></li>
+          <li><a href="#/hotels" class="hover:text-white">Hotels</a></li>
+          <li><a href="#/packages" class="hover:text-white">Packages</a></li>
+          <li><a href="#/activities" class="hover:text-white">Activities</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-semibold text-white mb-3">Company</div>
+        <ul class="space-y-2 text-slate-400">
+          <li><a href="#/about" class="hover:text-white">About us</a></li>
+          <li><a href="#/" class="hover:text-white">Careers</a></li>
+          <li><a href="#/" class="hover:text-white">Press</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-semibold text-white mb-3">Support</div>
+        <ul class="space-y-2 text-slate-400">
+          <li><a href="#/account" class="hover:text-white">Help center</a></li>
+          <li><a href="#/" class="hover:text-white">Cancellation policy</a></li>
+          <li><a href="#/" class="hover:text-white">Contact us</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="border-t border-slate-800 py-5 text-center text-xs text-slate-500">© 2026 FlyVenture. All rights reserved. Prototype for demonstration purposes.</div>
+  </footer>`;
+}
+
+/* =========================================================
+   HOME PAGE
+   ========================================================= */
+function searchFormHTML(tab){
+  const forms = {
+    flights: `
+      <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">From</span>
+          <select data-field="flight-from" class="w-full text-sm font-medium outline-none bg-transparent">${airportOptions(state.flightSearch.from)}</select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">To</span>
+          <select data-field="flight-to" class="w-full text-sm font-medium outline-none bg-transparent">${airportOptions(state.flightSearch.to)}</select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Departure</span>
+          <input type="date" class="w-full text-sm font-medium outline-none">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Travellers</span>
+          <select data-field="flight-travellers" class="w-full text-sm font-medium outline-none bg-transparent">
+            ${[1,2,3,4].map(n=>`<option value="${n}" ${state.flightSearch.travellers===n?'selected':''}>${n} Traveller${n>1?'s':''}</option>`).join('')}
+          </select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Class</span>
+          <select data-field="flight-cabin" class="w-full text-sm font-medium outline-none bg-transparent">
+            ${CABIN_CLASSES.map(c=>`<option value="${c.id}" ${state.flightSearch.cabinClass===c.id?'selected':''}>${c.label}</option>`).join('')}
+          </select>
+        </label>
+        <button data-action="search-flights" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Search Flights</button>
+      </div>`,
+    hotels: `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Destination</span>
+          <select data-field="hotel-dest" class="w-full text-sm font-medium outline-none bg-transparent">${destinationOptions('Goa')}</select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Check-in</span>
+          <input type="date" class="w-full text-sm font-medium outline-none">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Check-out</span>
+          <input type="date" class="w-full text-sm font-medium outline-none">
+        </label>
+        <button data-action="search-hotels" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Search Hotels</button>
+      </div>`,
+    cabs: `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Pickup location</span>
+          <input class="w-full text-sm font-medium outline-none" value="Goa Airport">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Drop location</span>
+          <input class="w-full text-sm font-medium outline-none" value="Calangute Beach">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Date & time</span>
+          <input type="datetime-local" class="w-full text-sm font-medium outline-none">
+        </label>
+        <button data-nav="#/cabs" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Find a Cab</button>
+      </div>`,
+    packages: `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Destination</span>
+          <select data-field="package-dest" class="w-full text-sm font-medium outline-none bg-transparent">${destinationOptions('Bali')}</select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Travel dates</span>
+          <input type="date" class="w-full text-sm font-medium outline-none">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Travellers</span>
+          <select class="w-full text-sm font-medium outline-none bg-transparent"><option>2 Travellers</option><option>1 Traveller</option><option>4 Travellers</option></select>
+        </label>
+        <button data-action="search-packages" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Find Packages</button>
+      </div>`,
+    activities: `
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Destination</span>
+          <select data-field="activity-dest" class="w-full text-sm font-medium outline-none bg-transparent">${destinationOptions('Dubai')}</select>
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Date</span>
+          <input type="date" class="w-full text-sm font-medium outline-none">
+        </label>
+        <label class="border border-slate-200 rounded-lg px-3 py-2">
+          <span class="block text-xs text-slate-400">Activity type</span>
+          <select class="w-full text-sm font-medium outline-none bg-transparent"><option>Any</option>${ACTIVITY_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select>
+        </label>
+        <button data-nav="#/activities" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-4 py-2 text-sm transition-colors">Find Activities</button>
+      </div>`,
+  };
+  return forms[tab];
+}
+
+function renderHome(){
+  const tabs = [['flights','Flights','✈️'],['hotels','Hotels','🏨'],['cabs','Cabs','🚗'],['packages','Packages','🧳'],['activities','Activities','🎟️']];
+  return `
+  <section class="relative">
+    <div class="h-[420px] md:h-[480px] bg-cover bg-center relative" style="background-image:url('${img('santorini,greece,coastline',1600,900)}')">
+      <div class="absolute inset-0 bg-gradient-to-r from-black/55 via-black/25 to-transparent"></div>
+      <div class="relative max-w-7xl mx-auto px-4 sm:px-6 h-full flex flex-col justify-center">
+        <h1 class="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white leading-tight max-w-xl">Plan your trip.<br>Book everything in one place.</h1>
+        <p class="text-white/90 mt-3 max-w-md text-sm sm:text-base">Flights, hotels, cabs, tours and experiences — all in one place.</p>
+      </div>
+    </div>
+
+    <div class="max-w-5xl mx-auto px-4 -mt-16 relative">
+      <div class="bg-white rounded-2xl shadow-xl border border-slate-100">
+        <div class="flex overflow-x-auto border-b border-slate-100 px-2">
+          ${tabs.map(([id,label,icon])=>`
+            <button data-tab="${id}" class="tab-btn ${state.homeTab===id?'active':''} flex items-center gap-1.5 whitespace-nowrap px-4 py-4 text-sm font-semibold text-slate-500 border-b-2 border-transparent hover:text-brand-600 transition-colors">
+              <span>${icon}</span> ${label}
+            </button>`).join('')}
+        </div>
+        <div id="search-form-wrap" class="p-4 sm:p-5">${searchFormHTML(state.homeTab)}</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 mt-16 grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
+    ${[['🏷️','Best prices','We match the lowest price'],['🔒','Secure booking','Your payment is safe with us'],['↩️','Easy cancellation','Flexible options on most bookings'],['🎧','Customer support','We\'re here to help anytime']]
+      .map(([icon,title,sub])=>`
+      <div class="flex flex-col items-start gap-1">
+        <span class="text-2xl mb-1">${icon}</span>
+        <span class="font-semibold text-slate-800">${title}</span>
+        <span class="text-slate-400 text-xs leading-snug">${sub}</span>
+      </div>`).join('')}
+  </section>
+
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 mt-16">
+    <h2 class="text-xl sm:text-2xl font-bold text-slate-900 mb-1">Destinations across the world</h2>
+    <p class="text-sm text-slate-400 mb-5">${DESTINATIONS.length} destinations across all 6 continents — tap one to see packages & hotels</p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+      ${DESTINATIONS.map(d=>`
+        <button data-goto-destination="${d.name}" class="relative rounded-xl overflow-hidden h-40 group text-left">
+          <img src="${img(d.seed,400,500)}" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" alt="${d.name}">
+          <div class="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"></div>
+          <div class="absolute bottom-2.5 left-3 text-white">
+            <div class="font-semibold text-sm">${d.name}</div>
+            <div class="text-[11px] text-white/80">From ${money(d.price)}</div>
+          </div>
+        </button>`).join('')}
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 mt-16">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Popular hotels</h2>
+      <a href="#/hotels" class="text-sm font-semibold text-brand-600 hover:underline">View all</a>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      ${HOTELS.slice(0,4).map(hotelCard).join('')}
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 mt-16">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Popular tour packages</h2>
+      <a href="#/packages" class="text-sm font-semibold text-brand-600 hover:underline">View all</a>
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      ${PACKAGES.map(packageCard).join('')}
+    </div>
+  </section>
+
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 mt-16 mb-20">
+    <div class="flex items-center justify-between mb-5">
+      <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Things to do</h2>
+      <a href="#/activities" class="text-sm font-semibold text-brand-600 hover:underline">View all</a>
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-5">
+      ${ACTIVITIES.slice(0,4).map(activityCard).join('')}
+    </div>
+  </section>`;
+}
+
+function bindHome(){
+  qsa('[data-tab]').forEach(btn=>btn.addEventListener('click', ()=>{
+    state.homeTab = btn.dataset.tab;
+    qsa('.tab-btn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    qs('#search-form-wrap').innerHTML = searchFormHTML(state.homeTab);
+    bindGlobalNav();
+  }));
+}
+
+/* =========================================================
+   CARD COMPONENTS
+   ========================================================= */
+function hotelCard(h){
+  return `
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden fade-in">
+    <button data-nav="#/hotel/${h.id}" class="block w-full text-left">
+      <div class="relative h-40">
+        <img src="${img(h.seed,500,350)}" class="w-full h-full object-cover" alt="${h.name}">
+        <span class="absolute top-2 right-2 bg-white/90 text-xs font-semibold px-2 py-0.5 rounded-full text-slate-700">${h.type}</span>
+      </div>
+      <div class="p-4">
+        <div class="flex items-start justify-between gap-2">
+          <h3 class="font-semibold text-slate-900 text-sm leading-snug">${h.name}</h3>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">${h.location}</p>
+        <div class="flex items-center gap-1 mt-2 text-xs">
+          <span class="text-amber-500">${stars(h.rating)}</span>
+          <span class="text-slate-400">${h.rating} (${h.reviews.toLocaleString()})</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mt-2">
+          ${h.amenities.slice(0,3).map(a=>`<span class="text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded">${AMENITY_ICONS[a]||''} ${a}</span>`).join('')}
+        </div>
+        <div class="avail-badge text-[11px] font-medium mt-2 ${availabilityFor(h.id+'r',8,1)<=2?'text-rose-500':'text-emerald-600'}">
+          <span class="avail-dot" style="background:${availabilityFor(h.id+'r',8,1)<=2?'#f43f5e':'#10b981'}"></span>
+          ${availabilityFor(h.id+'r',8,1)<=2? `Only ${availabilityFor(h.id+'r',8,1)} rooms left` : `${availabilityFor(h.id+'r',8,1)} rooms available`}
+        </div>
+      </div>
+    </button>
+    <div class="px-4 pb-4 flex items-end justify-between">
+      <div>
+        <div class="text-base font-bold text-slate-900">${money(h.price)}<span class="text-xs font-normal text-slate-400">/night</span></div>
+        <div class="text-[11px] text-slate-400">+ taxes & fees</div>
+      </div>
+      <button data-nav="#/hotel/${h.id}" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-3.5 py-2 transition-colors">View rooms</button>
+    </div>
+  </div>`;
+}
+
+function packageCard(p){
+  return `
+  <div class="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden fade-in">
+    <button data-nav="#/package/${p.id}" class="block w-full text-left">
+      <div class="h-36"><img src="${img(p.seed,500,350)}" class="w-full h-full object-cover" alt="${p.name}"></div>
+      <div class="p-4">
+        <div class="text-[11px] font-semibold text-brand-600 uppercase tracking-wide">${p.destination}</div>
+        <h3 class="font-semibold text-slate-900 text-sm mt-1">${p.name}</h3>
+        <p class="text-xs text-slate-400 mt-1">${p.days} days · ${p.days-1} nights</p>
+        <p class="text-xs text-slate-500 mt-2 line-clamp-2">${p.desc}</p>
+        <div class="avail-badge text-[11px] font-medium mt-2 ${availabilityFor(p.id,10,1)<=3?'text-rose-500':'text-emerald-600'}">
+          <span class="avail-dot" style="background:${availabilityFor(p.id,10,1)<=3?'#f43f5e':'#10b981'}"></span>
+          ${availabilityFor(p.id,10,1)<=3? `Only ${availabilityFor(p.id,10,1)} spots left` : `${availabilityFor(p.id,10,1)} spots available`}
+        </div>
+      </div>
+    </button>
+    <div class="px-4 pb-4 flex items-end justify-between">
+      <div>
+        <div class="text-[11px] text-slate-400">Starting from</div>
+        <div class="text-base font-bold text-slate-900">${money(p.price)}</div>
+      </div>
+      <button data-nav="#/package/${p.id}" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-3.5 py-2 transition-colors">View package</button>
+    </div>
+  </div>`;
+}
+
+function activityCard(a){
+  return `
+  <button data-nav="#/activity/${a.id}" class="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden text-left fade-in">
+    <div class="h-28 sm:h-32"><img src="${img(a.seed,400,300)}" class="w-full h-full object-cover" alt="${a.name}"></div>
+    <div class="p-3">
+      <div class="text-[10px] font-semibold text-brand-600 uppercase">${a.category}</div>
+      <h3 class="font-semibold text-slate-900 text-xs sm:text-sm mt-0.5 line-clamp-2">${a.name}</h3>
+      <p class="text-[11px] text-slate-400 mt-1">${a.location}</p>
+      <div class="flex items-center justify-between mt-2">
+        <span class="text-xs font-bold text-slate-900">${money(a.price)}</span>
+        <span class="text-[10px] text-amber-500">${a.rating} ★</span>
+      </div>
+    </div>
+  </button>`;
+}
+
+/* =========================================================
+   FLIGHTS RESULTS
+   ========================================================= */
+function renderFlights(){
+  const fs = state.flightSearch;
+  const sort = state.filters.flightSort;
+  const fromA = airportByCode(fs.from), toA = airportByCode(fs.to);
+  const cabinLabel = (CABIN_CLASSES.find(c=>c.id===fs.cabinClass) || CABIN_CLASSES[0]).label;
+  let list = generateFlights(fs.from, fs.to, fs.cabinClass);
+  if(sort==='cheapest') list.sort((a,b)=>a.price-b.price);
+  if(sort==='fastest') list.sort((a,b)=>durationMinutes(a.duration)-durationMinutes(b.duration));
+  const sameAirport = fs.from===fs.to;
+  return `
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <div class="bg-brand-50 border border-brand-100 rounded-xl p-4 mb-6 flex flex-wrap items-center justify-between gap-3 text-sm">
+      <div class="font-semibold text-slate-800">${fromA.city} (${fromA.code}) → ${toA.city} (${toA.code}) · <span class="text-slate-500 font-normal">${fs.travellers} traveller${fs.travellers>1?'s':''}, ${cabinLabel}</span></div>
+      <button data-nav="#/" class="text-brand-600 font-semibold text-xs">Modify search</button>
+    </div>
+    ${sameAirport ? `<div class="text-center py-16 text-slate-400 text-sm">Pick two different airports to see flight options.</div>` : `
+    <div class="flex items-center gap-2 mb-5">
+      ${[['recommended','Recommended'],['cheapest','Cheapest'],['fastest','Fastest']].map(([id,label])=>`
+        <button data-sort="${id}" class="px-3.5 py-1.5 rounded-full text-xs font-semibold border ${sort===id?'bg-brand-600 text-white border-brand-600':'bg-white text-slate-500 border-slate-200 hover:border-brand-300'}">${label}</button>
+      `).join('')}
+    </div>
+    <div class="space-y-3">
+      ${list.map(f=>`
+        <div class="bg-white border border-slate-100 rounded-xl shadow-sm p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div class="flex items-center gap-3 sm:w-40 shrink-0">
+            <span class="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0" style="background:${f.color}">${f.airline.slice(0,2).toUpperCase()}</span>
+            <div>
+              <div class="text-sm font-semibold text-slate-700 leading-tight">${f.airline}</div>
+              <div class="text-[10px] text-slate-400">${f.cabin}</div>
+            </div>
+          </div>
+          <div class="flex-1 flex items-center justify-between sm:justify-start sm:gap-10">
+            <div class="text-center">
+              <div class="font-bold text-slate-900">${f.dep}</div>
+              <div class="text-[11px] text-slate-400">${f.fromCode}</div>
+            </div>
+            <div class="flex-1 flex flex-col items-center px-2 sm:px-6 min-w-[100px]">
+              <div class="text-[11px] text-slate-400">${f.duration}</div>
+              <div class="w-full h-px bg-slate-200 my-1 relative"><span class="absolute right-0 -top-1 w-2 h-2 rounded-full bg-slate-300"></span></div>
+              <div class="text-[11px] ${f.stopsCount===0?'text-emerald-600':'text-slate-400'} font-medium">${f.stops}</div>
+            </div>
+            <div class="text-center">
+              <div class="font-bold text-slate-900">${f.arr}</div>
+              <div class="text-[11px] text-slate-400">${f.toCode}</div>
+            </div>
+          </div>
+          <div class="text-[11px] text-slate-400 hidden md:block sm:w-44">${f.baggage}</div>
+          <div class="flex items-center justify-between sm:flex-col sm:items-end gap-1 sm:w-32 shrink-0">
+            <div class="text-lg font-bold text-slate-900">${money(f.price)}</div>
+            <button data-action="book" data-type="flight" data-id="${f.id}" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-4 py-2 transition-colors">Select</button>
+          </div>
+        </div>`).join('')}
+    </div>`}
+  </section>`;
+}
+function bindFlights(){
+  qsa('[data-sort]').forEach(b=>b.addEventListener('click',()=>{ state.filters.flightSort=b.dataset.sort; render(); }));
+}
+
+/* =========================================================
+   HOTELS RESULTS + DETAIL
+   ========================================================= */
+function hotelCities(){ return [...new Set(HOTELS.map(h=>h.location.split(',')[0]))]; }
+function hotelTypes(){ return [...new Set(HOTELS.map(h=>h.type))]; }
+function renderHotelsResults(){
+  const f = state.filters.hotel;
+  const allAmenities = [...new Set(HOTELS.flatMap(h=>h.amenities))];
+  const list = HOTELS.filter(h=>
+    h.price<=f.maxPrice && h.rating>=f.minRating &&
+    (f.amenities.length===0 || f.amenities.every(a=>h.amenities.includes(a))) &&
+    (f.city==='All' || h.location.startsWith(f.city)) &&
+    (f.types.length===0 || f.types.includes(h.type))
+  );
+  return `
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Hotels${f.city!=='All'?` in ${f.city}`:''}</h1>
+    <p class="text-sm text-slate-400 mb-5">${list.length} propert${list.length===1?'y':'ies'} found</p>
+    <div class="flex flex-wrap gap-2 mb-6">
+      <button data-hotel-city="All" class="chip text-xs font-semibold px-3.5 py-1.5 rounded-full ${f.city==='All'?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200 hover:border-brand-300'}">All cities</button>
+      ${hotelCities().map(c=>`
+        <button data-hotel-city="${c}" class="chip text-xs font-semibold px-3.5 py-1.5 rounded-full ${f.city===c?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200 hover:border-brand-300'}">${c}</button>
+      `).join('')}
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-6">
+      <aside class="bg-white border border-slate-100 rounded-xl p-4 h-fit sticky top-20">
+        <div class="mb-5">
+          <div class="text-sm font-semibold text-slate-800 mb-2">Max price / night</div>
+          <input type="range" min="2000" max="30000" step="1000" value="${f.maxPrice}" data-filter="maxPrice" class="w-full accent-brand-600">
+          <div class="text-xs text-slate-400 mt-1">Up to ${money(f.maxPrice)}</div>
+        </div>
+        <div class="mb-5">
+          <div class="text-sm font-semibold text-slate-800 mb-2">Rating</div>
+          ${[4.5,4,3.5,0].map(r=>`
+            <label class="flex items-center gap-2 text-xs text-slate-500 py-1 cursor-pointer">
+              <input type="radio" name="rating" data-filter="minRating" value="${r}" ${f.minRating===r?'checked':''} class="accent-brand-600">
+              ${r>0? r+'+ stars' : 'Any rating'}
+            </label>`).join('')}
+        </div>
+        <div class="mb-5">
+          <div class="text-sm font-semibold text-slate-800 mb-2">Property type</div>
+          ${hotelTypes().map(t=>`
+            <label class="flex items-center gap-2 text-xs text-slate-500 py-1 cursor-pointer">
+              <input type="checkbox" data-filter="type" value="${t}" ${f.types.includes(t)?'checked':''} class="accent-brand-600">
+              ${t}
+            </label>`).join('')}
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-800 mb-2">Amenities</div>
+          ${allAmenities.map(a=>`
+            <label class="flex items-center gap-2 text-xs text-slate-500 py-1 cursor-pointer">
+              <input type="checkbox" data-filter="amenity" value="${a}" ${f.amenities.includes(a)?'checked':''} class="accent-brand-600">
+              ${AMENITY_ICONS[a]||''} ${a}
+            </label>`).join('')}
+        </div>
+        <button data-action="reset-hotel-filters" class="mt-5 w-full text-xs font-semibold text-brand-600 border border-brand-200 hover:bg-brand-50 rounded-lg py-2 transition-colors">Reset filters</button>
+      </aside>
+      <div class="space-y-4">
+        ${list.length? list.map(h=>`
+          <div class="bg-white border border-slate-100 rounded-xl shadow-sm overflow-hidden flex flex-col sm:flex-row">
+            <img src="${img(h.seed,400,300)}" class="w-full sm:w-56 h-44 sm:h-auto object-cover" alt="${h.name}">
+            <div class="flex-1 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 class="font-semibold text-slate-900">${h.name}</h3>
+                <p class="text-xs text-slate-400 mt-0.5">${h.location}</p>
+                <div class="flex items-center gap-1 mt-1.5 text-xs"><span class="text-amber-500">${stars(h.rating)}</span><span class="text-slate-400">${h.rating} (${h.reviews.toLocaleString()} reviews)</span></div>
+                <div class="flex flex-wrap gap-1.5 mt-2">${h.amenities.map(a=>`<span class="text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded">${AMENITY_ICONS[a]||''} ${a}</span>`).join('')}</div>
+                <p class="text-[11px] text-emerald-600 mt-2 font-medium">Free cancellation available</p>
+                <p class="avail-badge text-[11px] font-medium mt-1 ${availabilityFor(h.id+'r',8,1)<=2?'text-rose-500':'text-slate-400'}"><span class="avail-dot" style="background:${availabilityFor(h.id+'r',8,1)<=2?'#f43f5e':'#94a3b8'}"></span>${availabilityFor(h.id+'r',8,1)<=2? `Only ${availabilityFor(h.id+'r',8,1)} rooms left`:`${availabilityFor(h.id+'r',8,1)} rooms available`}</p>
+              </div>
+              <div class="text-right shrink-0">
+                <div class="text-lg font-bold text-slate-900">${money(h.price)}</div>
+                <div class="text-[11px] text-slate-400 mb-2">+ taxes & fees / night</div>
+                <button data-nav="#/hotel/${h.id}" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-4 py-2 w-full transition-colors">View rooms</button>
+              </div>
+            </div>
+          </div>`).join('') : `<div class="text-center py-16 text-slate-400 text-sm">No hotels match your filters. Try widening your search.</div>`}
+      </div>
+    </div>
+  </section>`;
+}
+function bindHotelsResults(){
+  qs('[data-filter="maxPrice"]')?.addEventListener('input',e=>{ state.filters.hotel.maxPrice=+e.target.value; render(); });
+  qsa('[data-filter="minRating"]').forEach(el=>el.addEventListener('change',e=>{ state.filters.hotel.minRating=+e.target.value; render(); }));
+  qsa('[data-filter="amenity"]').forEach(el=>el.addEventListener('change',e=>{
+    const v=e.target.value; const arr=state.filters.hotel.amenities;
+    state.filters.hotel.amenities = e.target.checked ? [...arr,v] : arr.filter(x=>x!==v);
+    render();
+  }));
+  qsa('[data-filter="type"]').forEach(el=>el.addEventListener('change',e=>{
+    const v=e.target.value; const arr=state.filters.hotel.types;
+    state.filters.hotel.types = e.target.checked ? [...arr,v] : arr.filter(x=>x!==v);
+    render();
+  }));
+  qsa('[data-hotel-city]').forEach(b=>b.addEventListener('click',()=>{ state.filters.hotel.city=b.dataset.hotelCity; render(); }));
+  qs('[data-action="reset-hotel-filters"]')?.addEventListener('click',()=>{
+    state.filters.hotel = {maxPrice:30000, minRating:0, amenities:[], city:'All', types:[]};
+    render();
+  });
+}
+
+function renderHotelDetail(id){
+  const h = HOTELS.find(x=>x.id===id);
+  if(!h) return notFound('Hotel');
+  const rooms = [
+    {name:'Deluxe Room', desc:'Garden view, king bed, 32 sqm', price:h.price},
+    {name:'Premium Room', desc:'Sea view, king bed, 38 sqm, balcony', price:Math.round(h.price*1.3)},
+    {name:'Suite', desc:'Sea view, living area, 55 sqm, breakfast included', price:Math.round(h.price*1.8)},
+  ];
+  return `
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <button data-nav="#/hotels" class="text-xs font-semibold text-brand-600 mb-4 inline-flex items-center gap-1">← Back to results</button>
+    <div class="grid grid-cols-4 grid-rows-2 gap-2 h-72 sm:h-96 rounded-xl overflow-hidden mb-6">
+      <img src="${img(h.seed,900,700,0)}" class="col-span-4 sm:col-span-2 row-span-2 w-full h-full object-cover">
+      <img src="${img(h.seed,500,400,1)}" class="hidden sm:block w-full h-full object-cover">
+      <img src="${img(h.seed,500,400,2)}" class="hidden sm:block w-full h-full object-cover">
+      <img src="${img(h.seed,500,400,3)}" class="hidden sm:block w-full h-full object-cover">
+      <img src="${img(h.seed,500,400,4)}" class="hidden sm:block w-full h-full object-cover">
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8">
+      <div>
+        <h1 class="text-2xl font-bold text-slate-900">${h.name}</h1>
+        <p class="text-sm text-slate-400 mt-1">${h.location}</p>
+        <div class="flex items-center gap-1.5 mt-2 text-sm"><span class="text-amber-500">${stars(h.rating)}</span><span class="text-slate-500">${h.rating} · ${h.reviews.toLocaleString()} reviews</span></div>
+        <p class="text-sm text-slate-600 leading-relaxed mt-4">${h.name} offers a relaxed stay in ${h.location.split(',')[0]} with easy access to local attractions, dining and beaches. Rooms are designed for comfort with modern amenities throughout.</p>
+        <div class="mt-6">
+          <h2 class="font-semibold text-slate-900 mb-3">Amenities</h2>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            ${h.amenities.map(a=>`<div class="flex items-center gap-2 text-sm text-slate-600"><span>${AMENITY_ICONS[a]||'✓'}</span>${a}</div>`).join('')}
+          </div>
+        </div>
+        <div class="mt-8">
+          <h2 class="font-semibold text-slate-900 mb-3">Available rooms</h2>
+          <div class="space-y-3">
+            ${rooms.map((r,i)=>`
+              <div class="border border-slate-100 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div class="font-semibold text-slate-800 text-sm">${r.name}</div>
+                  <div class="text-xs text-slate-400 mt-1">${r.desc}</div>
+                  <div class="text-[11px] text-emerald-600 mt-1 font-medium">Free cancellation before check-in</div>
+                </div>
+                <div class="text-right shrink-0">
+                  <div class="font-bold text-slate-900">${money(r.price)}<span class="text-[11px] font-normal text-slate-400">/night</span></div>
+                  <button data-action="book" data-type="hotel" data-id="${h.id}" data-meta='${JSON.stringify({room:r.name,price:r.price}).replace(/'/g,"&apos;")}' class="mt-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-4 py-2 transition-colors">Select room</button>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+        <div class="mt-8">
+          <h2 class="font-semibold text-slate-900 mb-2">Cancellation policy</h2>
+          <p class="text-sm text-slate-500">Free cancellation up to 48 hours before check-in. After that, the first night is non-refundable.</p>
+        </div>
+        <div class="mt-8">
+          <h2 class="font-semibold text-slate-900 mb-3">Guest reviews</h2>
+          <div class="space-y-3">
+            ${[['Anjali S.','Beautiful property, staff went above and beyond.'],['Marcus T.','Great location and spotless rooms. Would stay again.']].map(([n,t])=>`
+              <div class="border border-slate-100 rounded-lg p-3 text-sm">
+                <div class="font-semibold text-slate-700 text-xs">${n} <span class="text-amber-500 ml-1">★★★★★</span></div>
+                <p class="text-slate-500 mt-1">${t}</p>
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+      <aside class="border border-slate-100 rounded-xl p-5 h-fit sticky top-20">
+        <div class="text-2xl font-bold text-slate-900">${money(h.price)}<span class="text-sm font-normal text-slate-400">/night</span></div>
+        <div class="text-xs text-slate-400 mb-4">+ taxes & fees</div>
+        <div class="rounded-lg overflow-hidden border border-slate-100 mb-4 h-32 bg-slate-50 flex items-center justify-center text-xs text-slate-400">📍 Map preview</div>
+        <button data-action="book" data-type="hotel" data-id="${h.id}" data-meta='${JSON.stringify({room:rooms[0].name,price:rooms[0].price}).replace(/'/g,"&apos;")}' class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Book now</button>
+      </aside>
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   CABS
+   ========================================================= */
+function renderCabs(){
+  return `
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Cabs in Goa</h1>
+    <p class="text-sm text-slate-400 mb-6">Goa Airport → Calangute Beach</p>
+    <div class="flex flex-wrap gap-2 mb-6">
+      ${['Airport transfer','Local taxi','Outstation','Hourly rental'].map((t,i)=>`<span class="text-xs font-semibold px-3 py-1.5 rounded-full ${i===0?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200'}">${t}</span>`).join('')}
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      ${CABS.map(c=>`
+        <div class="bg-white border border-slate-100 rounded-xl shadow-sm p-4 flex items-center gap-4">
+          <img src="${img(c.seed,200,150)}" class="w-24 h-20 object-cover rounded-lg shrink-0">
+          <div class="flex-1">
+            <div class="font-semibold text-slate-800 text-sm">${c.name}</div>
+            <div class="text-xs text-slate-400 mt-0.5">${c.seats} seats · ${c.ac?'AC':'Non-AC'} · ${c.type}</div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="font-bold text-slate-900">${money(c.price)}</span>
+              <button data-action="book" data-type="cab" data-id="${c.id}" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold rounded-lg px-3.5 py-1.5 transition-colors">Book cab</button>
+            </div>
+          </div>
+        </div>`).join('')}
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   PACKAGES (list + detail)
+   ========================================================= */
+function packageCities(){ return [...new Set(PACKAGES.map(p=>p.destination.split(',')[0]))]; }
+function renderPackages(){
+  const city = state.filters.packageCity || 'All';
+  const list = city==='All' ? PACKAGES : PACKAGES.filter(p=>p.destination.startsWith(city));
+  return `
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Tour packages</h1>
+    <p class="text-sm text-slate-400 mb-5">${list.length} curated package${list.length===1?'':'s'}${city!=='All'?` in ${city}`:''}</p>
+    <div class="flex flex-wrap gap-2 mb-6">
+      <button data-pkg-city="All" class="chip text-xs font-semibold px-3.5 py-1.5 rounded-full ${city==='All'?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200 hover:border-brand-300'}">All destinations</button>
+      ${packageCities().map(c=>`
+        <button data-pkg-city="${c}" class="chip text-xs font-semibold px-3.5 py-1.5 rounded-full ${city===c?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200 hover:border-brand-300'}">${c}</button>
+      `).join('')}
+    </div>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      ${list.length ? list.map(packageCard).join('') : `<div class="col-span-full text-center py-16 text-slate-400 text-sm">No packages for ${city} yet. Try another destination.</div>`}
+    </div>
+  </section>`;
+}
+function bindPackages(){
+  qsa('[data-pkg-city]').forEach(b=>b.addEventListener('click',()=>{ state.filters.packageCity=b.dataset.pkgCity; render(); }));
+}
+
+function renderPackageDetail(id){
+  const p = PACKAGES.find(x=>x.id===id);
+  if(!p) return notFound('Package');
+  return `
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+    <button data-nav="#/packages" class="text-xs font-semibold text-brand-600 mb-4 inline-flex items-center gap-1">← Back to packages</button>
+    <div class="rounded-xl overflow-hidden h-64 sm:h-80 mb-6"><img src="${img(p.seed,1200,700)}" class="w-full h-full object-cover"></div>
+    <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
+      <div>
+        <div class="text-xs font-semibold text-brand-600 uppercase tracking-wide">${p.destination}</div>
+        <h1 class="text-2xl font-bold text-slate-900 mt-1">${p.name}</h1>
+        <div class="flex items-center gap-3 text-sm text-slate-500 mt-2">
+          <span>${p.days} days / ${p.days-1} nights</span><span>·</span><span class="text-amber-500">${stars(p.rating)} ${p.rating}</span>
+        </div>
+        <p class="text-sm text-slate-600 leading-relaxed mt-4">${p.desc}</p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6 text-sm">
+          <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Hotel</div><div class="font-medium text-slate-700">${p.hotel}</div></div>
+          <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Transport</div><div class="font-medium text-slate-700">${p.transport}</div></div>
+          <div class="bg-slate-50 rounded-lg p-3"><div class="text-xs text-slate-400 mb-1">Activities</div><div class="font-medium text-slate-700">${p.activitiesList.length} included</div></div>
+        </div>
+
+        <div class="mt-8">
+          <h2 class="font-semibold text-slate-900 mb-3">Day-by-day itinerary</h2>
+          <div class="space-y-4">
+            ${p.itinerary.map(d=>`
+              <div class="flex gap-4">
+                <div class="w-16 shrink-0 text-sm font-bold text-brand-600">Day ${d.day}</div>
+                <div class="flex-1 border-l border-slate-200 pl-4 pb-4">
+                  <div class="font-semibold text-slate-800 text-sm">${d.title}</div>
+                  <p class="text-sm text-slate-500 mt-1">${d.desc}</p>
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8">
+          <div>
+            <h2 class="font-semibold text-slate-900 mb-2">Inclusions</h2>
+            <ul class="space-y-1.5 text-sm text-slate-600">${p.inclusions.map(i=>`<li class="flex gap-2"><span class="text-emerald-500">✓</span>${i}</li>`).join('')}</ul>
+          </div>
+          <div>
+            <h2 class="font-semibold text-slate-900 mb-2">Exclusions</h2>
+            <ul class="space-y-1.5 text-sm text-slate-600">${p.exclusions.map(i=>`<li class="flex gap-2"><span class="text-rose-400">✕</span>${i}</li>`).join('')}</ul>
+          </div>
+        </div>
+
+        <div class="mt-8">
+          <h2 class="font-semibold text-slate-900 mb-2">Cancellation policy</h2>
+          <p class="text-sm text-slate-500">${p.cancellation}</p>
+        </div>
+      </div>
+      <aside class="border border-slate-100 rounded-xl p-5 h-fit sticky top-20">
+        <div class="text-xs text-slate-400">Starting from</div>
+        <div class="text-2xl font-bold text-slate-900">${money(p.price)}</div>
+        <div class="text-[11px] text-slate-400 mb-4">per person, twin sharing</div>
+        <button data-action="book" data-type="package" data-id="${p.id}" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Book package</button>
+      </aside>
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   ACTIVITIES (list + detail)
+   ========================================================= */
+function renderActivities(activeCat){
+  const cat = activeCat || 'All';
+  const list = cat==='All' ? ACTIVITIES : ACTIVITIES.filter(a=>a.category===cat);
+  return `
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Things to do</h1>
+    <p class="text-sm text-slate-400 mb-5">${list.length} experiences</p>
+    <div class="flex flex-wrap gap-2 mb-6">
+      ${['All',...ACTIVITY_CATEGORIES].map(c=>`
+        <button data-cat="${c}" class="text-xs font-semibold px-3.5 py-1.5 rounded-full ${cat===c?'bg-brand-600 text-white':'bg-slate-50 text-slate-500 border border-slate-200 hover:border-brand-300'}">${c}</button>
+      `).join('')}
+    </div>
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-5">
+      ${list.map(activityCard).join('')}
+    </div>
+  </section>`;
+}
+function bindActivities(){
+  qsa('[data-cat]').forEach(b=>b.addEventListener('click',()=>{ state.activityCat=b.dataset.cat; render(); }));
+}
+
+function renderActivityDetail(id){
+  const a = ACTIVITIES.find(x=>x.id===id);
+  if(!a) return notFound('Activity');
+  return `
+  <section class="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+    <button data-nav="#/activities" class="text-xs font-semibold text-brand-600 mb-4 inline-flex items-center gap-1">← Back to activities</button>
+    <div class="rounded-xl overflow-hidden h-64 sm:h-80 mb-6"><img src="${img(a.seed,1000,650)}" class="w-full h-full object-cover"></div>
+    <div class="text-xs font-semibold text-brand-600 uppercase">${a.category}</div>
+    <h1 class="text-2xl font-bold text-slate-900 mt-1">${a.name}</h1>
+    <div class="flex items-center gap-3 text-sm text-slate-500 mt-2">
+      <span>${a.location}</span><span>·</span><span>${a.duration}</span><span>·</span><span class="text-amber-500">${a.rating} ★</span>
+    </div>
+    <p class="text-sm text-slate-600 leading-relaxed mt-4">Join this ${a.duration.toLowerCase()} experience in ${a.location} led by local, licensed operators. Small-group friendly with hotel pickup available in most areas.</p>
+    <div class="flex items-center justify-between mt-8 border border-slate-100 rounded-xl p-5">
+      <div>
+        <div class="text-xs text-slate-400">Price per person</div>
+        <div class="text-xl font-bold text-slate-900">${money(a.price)}</div>
+      </div>
+      <button data-action="book" data-type="activity" data-id="${a.id}" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-6 py-2.5 text-sm transition-colors">Book now</button>
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   TOUR GUIDES (list + profile)
+   ========================================================= */
+function renderGuides(){
+  return `
+  <section class="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Tour guides</h1>
+    <p class="text-sm text-slate-400 mb-6">Local, licensed guides for a more personal trip</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      ${GUIDES.map(g=>`
+        <button data-nav="#/guide/${g.id}" class="bg-white border border-slate-100 rounded-xl shadow-sm hover:shadow-md transition-shadow overflow-hidden text-left">
+          <img src="${img(g.seed,400,400)}" class="w-full h-40 object-cover">
+          <div class="p-4">
+            <div class="font-semibold text-slate-900 text-sm">${g.name}</div>
+            <div class="text-xs text-slate-400 mt-0.5">${g.location}</div>
+            <div class="text-xs text-slate-500 mt-1.5">${g.languages.join(', ')}</div>
+            <div class="flex items-center justify-between mt-2">
+              <span class="text-amber-500 text-xs">${g.rating} ★</span>
+              <span class="text-xs font-bold text-slate-900">${money(g.price)}/${g.unit}</span>
+            </div>
+          </div>
+        </button>`).join('')}
+    </div>
+  </section>`;
+}
+function renderGuideDetail(id){
+  const g = GUIDES.find(x=>x.id===id);
+  if(!g) return notFound('Guide');
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+    <button data-nav="#/guides" class="text-xs font-semibold text-brand-600 mb-4 inline-flex items-center gap-1">← Back to guides</button>
+    <div class="flex flex-col sm:flex-row gap-6 items-start">
+      <img src="${img(g.seed,300,300)}" class="w-28 h-28 rounded-full object-cover shrink-0">
+      <div class="flex-1">
+        <h1 class="text-xl font-bold text-slate-900">${g.name}</h1>
+        <p class="text-sm text-slate-400">${g.location} · ${g.experience} experience</p>
+        <div class="text-amber-500 text-sm mt-1">${stars(g.rating)} ${g.rating}</div>
+        <p class="text-sm text-slate-600 leading-relaxed mt-3">${g.about}</p>
+        <div class="flex flex-wrap gap-1.5 mt-3">${g.specialities.map(s=>`<span class="text-[11px] bg-slate-50 text-slate-500 px-2 py-1 rounded-full">${s}</span>`).join('')}</div>
+        <div class="text-xs text-slate-400 mt-3">Speaks: ${g.languages.join(', ')}</div>
+      </div>
+    </div>
+    <div class="flex items-center justify-between mt-8 border border-slate-100 rounded-xl p-5">
+      <div>
+        <div class="text-xs text-slate-400">Price</div>
+        <div class="text-xl font-bold text-slate-900">${money(g.price)}<span class="text-sm font-normal text-slate-400">/${g.unit}</span></div>
+      </div>
+      <button data-action="book" data-type="guide" data-id="${g.id}" class="bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg px-6 py-2.5 text-sm transition-colors">Book guide</button>
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   "MORE" PLACEHOLDER SERVICES
+   ========================================================= */
+function renderMorePlaceholder(slug){
+  const titles = {'bus':'Bus tickets','train':'Train tickets','car-rentals':'Car rentals','airport-transfers':'Airport transfers'};
+  const title = titles[slug] || 'Service';
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-24 text-center">
+    <div class="text-4xl mb-4">🚧</div>
+    <h1 class="text-xl font-bold text-slate-900">${title} — coming soon</h1>
+    <p class="text-sm text-slate-500 mt-2 max-w-md mx-auto">This service follows the same search → choose → book flow as the rest of FlyVenture. It's next on the build list.</p>
+    <button data-nav="#/" class="mt-6 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">Back to home</button>
+  </section>`;
+}
+
+/* =========================================================
+   ABOUT US
+   ========================================================= */
+function renderAbout(){
+  return `
+  <section class="relative">
+    <div class="h-56 sm:h-72 bg-cover bg-center relative" style="background-image:url('${img('travel,team,office',1600,700)}')">
+      <div class="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-transparent"></div>
+      <div class="relative max-w-5xl mx-auto px-4 sm:px-6 h-full flex flex-col justify-center">
+        <h1 class="text-2xl sm:text-4xl font-extrabold text-white">About FlyVenture</h1>
+        <p class="text-white/90 mt-2 max-w-lg text-sm sm:text-base">One place to plan and book flights, hotels, cabs, packages and experiences.</p>
+      </div>
+    </div>
+  </section>
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 py-12">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-14">
+      ${[['150K+','Trips booked'],['6+','Destinations covered'],['4.7★','Average traveller rating']]
+        .map(([v,l])=>`<div class="text-center border border-slate-100 rounded-xl py-6"><div class="text-2xl font-extrabold text-brand-600">${v}</div><div class="text-xs text-slate-400 mt-1">${l}</div></div>`).join('')}
+    </div>
+
+    <h2 class="text-xl font-bold text-slate-900 mb-3">Our story</h2>
+    <p class="text-sm text-slate-600 leading-relaxed max-w-3xl">FlyVenture started with a simple frustration: booking a trip usually means juggling half a dozen apps for flights, hotels, cabs and activities. We built FlyVenture to bring all of that into a single, fast, dependable booking experience — from a weekend hotel stay to a fully planned multi-city holiday package.</p>
+
+    <h2 class="text-xl font-bold text-slate-900 mt-12 mb-5">Leadership</h2>
+    <div class="grid grid-cols-1 max-w-md gap-6">
+      ${LEADERSHIP.map(p=>`
+        <div class="border border-slate-100 rounded-xl p-5 flex gap-4 items-start">
+          <img src="${p.photo}" class="w-20 h-20 rounded-full object-cover shrink-0" alt="${p.name}">
+          <div>
+            <div class="font-semibold text-slate-900">${p.name}</div>
+            <div class="text-xs font-semibold text-brand-600 mt-0.5">${p.role}</div>
+            <p class="text-xs text-slate-500 mt-2 leading-relaxed">${p.bio}</p>
+          </div>
+        </div>`).join('')}
+    </div>
+
+    <div class="mt-14 bg-brand-50 border border-brand-100 rounded-xl p-6 text-center">
+      <h2 class="font-semibold text-slate-900">Want to get in touch?</h2>
+      <p class="text-sm text-slate-500 mt-1">Our support team is happy to help with bookings, packages or partnership enquiries.</p>
+      <button data-nav="#/account" class="mt-4 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">Contact support</button>
+    </div>
+  </section>`;
+}
+
+function notFound(label){
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-24 text-center">
+    <h1 class="text-xl font-bold text-slate-900">${label} not found</h1>
+    <button data-nav="#/" class="mt-6 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">Back to home</button>
+  </section>`;
+}
+
+/* =========================================================
+   BOOKING FLOW  (Search → Choose → Traveller details → Review → Payment → Confirmation)
+   ========================================================= */
+function itemAndPrice(type,id,meta){
+  const maps = {
+    flight: ()=>{
+      const [,fromCode,toCode,cabinId,iStr] = id.split('-');
+      const f = generateFlights(fromCode,toCode,cabinId)[+iStr];
+      return {title:`${f.airline} — ${f.from} to ${f.to}`, sub:`${f.dep} – ${f.arr} · ${f.duration} · ${f.cabin} · ${f.stops}`, price:f.price};
+    },
+    hotel: ()=>{ const h=HOTELS.find(x=>x.id===id); return {title:h.name, sub:`${meta?.room||'Deluxe Room'} · ${h.location}`, price:meta?.price||h.price}; },
+    cab: ()=>{ const c=CABS.find(x=>x.id===id); return {title:c.name, sub:`${c.seats} seats · ${c.type}`, price:c.price}; },
+    package: ()=>{ const p=PACKAGES.find(x=>x.id===id); return {title:p.name, sub:`${p.destination} · ${p.days} days`, price:p.price}; },
+    activity: ()=>{ const a=ACTIVITIES.find(x=>x.id===id); return {title:a.name, sub:`${a.location} · ${a.duration}`, price:a.price}; },
+    guide: ()=>{ const g=GUIDES.find(x=>x.id===id); return {title:g.name, sub:`${g.location} guide · per ${g.unit}`, price:g.price}; },
+  };
+  return maps[type] ? maps[type]() : {title:'Item', sub:'', price:0};
+}
+
+function startBooking(type,id,meta){
+  if(!state.user){
+    state.pendingBooking = {type,id,meta};
+    openLoginModal('Please log in to continue your booking.');
+    return;
+  }
+  state.currentBooking = { type, itemId:id, meta, step:1, traveller:{name:state.user?.name||'', email:state.user?.email||'', phone:''} };
+  go('#/booking');
+}
+
+function renderBooking(){
+  const b = state.currentBooking;
+  if(!b) return notFound('Booking');
+  const item = itemAndPrice(b.type,b.itemId,b.meta);
+  const steps = ['Traveller details','Review','Payment'];
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+    <div class="flex items-center gap-2 mb-8 text-xs font-semibold">
+      ${steps.map((s,i)=>`
+        <div class="flex items-center gap-2">
+          <span class="w-6 h-6 rounded-full flex items-center justify-center ${b.step>=i+1?'bg-brand-600 text-white':'bg-slate-100 text-slate-400'}">${i+1}</span>
+          <span class="${b.step===i+1?'text-slate-800':'text-slate-400'}">${s}</span>
+          ${i<steps.length-1?'<span class="w-8 h-px bg-slate-200 mx-1"></span>':''}
+        </div>`).join('')}
+    </div>
+
+    <div class="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-6 flex items-center justify-between">
+      <div>
+        <div class="font-semibold text-slate-800 text-sm">${item.title}</div>
+        <div class="text-xs text-slate-400">${item.sub}</div>
+      </div>
+      <div class="font-bold text-slate-900">${money(item.price)}</div>
+    </div>
+
+    ${b.step===1 ? `
+      <form id="traveller-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Full name</label>
+          <input required name="name" value="${b.traveller.name}" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Email</label>
+          <input required type="email" name="email" value="${b.traveller.email}" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Phone number</label>
+          <input required name="phone" value="${b.traveller.phone}" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm" placeholder="+91 98765 43210">
+        </div>
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Continue to review</button>
+      </form>
+    ` : ''}
+
+    ${b.step===2 ? `
+      <div class="space-y-4">
+        <div class="border border-slate-100 rounded-xl p-4 space-y-2 text-sm">
+          <div class="flex justify-between"><span class="text-slate-400">Traveller</span><span class="font-medium text-slate-700">${b.traveller.name}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Email</span><span class="font-medium text-slate-700">${b.traveller.email}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Phone</span><span class="font-medium text-slate-700">${b.traveller.phone}</span></div>
+        </div>
+        <div class="border border-slate-100 rounded-xl p-4 space-y-2 text-sm">
+          <div class="flex justify-between"><span class="text-slate-400">Base price</span><span class="font-medium text-slate-700">${money(item.price)}</span></div>
+          <div class="flex justify-between"><span class="text-slate-400">Taxes & fees</span><span class="font-medium text-slate-700">${money(Math.round(item.price*0.08))}</span></div>
+          <div class="flex justify-between pt-2 border-t border-slate-100 font-bold text-slate-900"><span>Total</span><span>${money(item.price + Math.round(item.price*0.08))}</span></div>
+        </div>
+        <div class="flex gap-3">
+          <button data-action="prev-step" class="flex-1 border border-slate-200 text-slate-600 font-semibold rounded-lg py-2.5 text-sm">Back</button>
+          <button data-action="next-step" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Continue to payment</button>
+        </div>
+      </div>
+    ` : ''}
+
+    ${b.step===3 ? `
+      <form id="payment-form" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Card number</label>
+          <input required maxlength="19" placeholder="4242 4242 4242 4242" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Expiry</label>
+            <input required placeholder="MM/YY" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">CVV</label>
+            <input required maxlength="3" placeholder="123" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm">
+          </div>
+        </div>
+        <div class="flex items-center justify-between border-t border-slate-100 pt-4">
+          <span class="text-sm text-slate-500">Total payable</span>
+          <span class="font-bold text-slate-900">${money(item.price + Math.round(item.price*0.08))}</span>
+        </div>
+        <div class="flex gap-3">
+          <button type="button" data-action="prev-step" class="flex-1 border border-slate-200 text-slate-600 font-semibold rounded-lg py-2.5 text-sm">Back</button>
+          <button type="submit" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Pay now</button>
+        </div>
+        <p class="text-[11px] text-slate-400 text-center">This is a prototype — no real payment is processed.</p>
+      </form>
+    ` : ''}
+  </section>`;
+}
+
+function bindBooking(){
+  qs('#traveller-form')?.addEventListener('submit',e=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    state.currentBooking.traveller = { name:fd.get('name'), email:fd.get('email'), phone:fd.get('phone') };
+    state.currentBooking.step = 2;
+    render();
+  });
+  qsa('[data-action="prev-step"]').forEach(b=>b.addEventListener('click',()=>{ state.currentBooking.step -= 1; render(); }));
+  qsa('[data-action="next-step"]').forEach(b=>b.addEventListener('click',()=>{ state.currentBooking.step += 1; render(); }));
+  qs('#payment-form')?.addEventListener('submit',e=>{
+    e.preventDefault();
+    const b = state.currentBooking;
+    const item = itemAndPrice(b.type,b.itemId,b.meta);
+    const record = {
+      id: bookingId(), type:b.type, title:item.title, sub:item.sub,
+      price: item.price + Math.round(item.price*0.08),
+      traveller: b.traveller, date: new Date().toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}),
+      status:'Confirmed',
+    };
+    state.bookings.unshift(record);
+    state.lastBooking = record;
+    state.currentBooking = null;
+    go('#/confirmation');
+  });
+}
+
+function renderConfirmation(){
+  const b = state.lastBooking;
+  if(!b) return notFound('Booking');
+  return `
+  <section class="max-w-2xl mx-auto px-4 sm:px-6 py-12 text-center">
+    <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-500 flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
+    <h1 class="text-xl font-bold text-slate-900">Booking confirmed!</h1>
+    <p class="text-sm text-slate-400 mt-1">A confirmation has been sent to ${b.traveller.email}</p>
+
+    <div class="text-left border border-slate-100 rounded-xl p-5 mt-8 space-y-3 text-sm">
+      <div class="flex justify-between"><span class="text-slate-400">Booking ID</span><span class="font-semibold text-slate-800">${b.id}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Service</span><span class="font-semibold text-slate-800">${b.title}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Details</span><span class="font-semibold text-slate-800">${b.sub}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Date booked</span><span class="font-semibold text-slate-800">${b.date}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Traveller</span><span class="font-semibold text-slate-800">${b.traveller.name}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Amount paid</span><span class="font-semibold text-slate-800">${money(b.price)}</span></div>
+      <div class="flex justify-between"><span class="text-slate-400">Payment status</span><span class="font-semibold text-emerald-600">Paid</span></div>
+      <div class="flex justify-between pt-2 border-t border-slate-100"><span class="text-slate-400">Cancellation</span><span class="font-semibold text-slate-800 text-right">Free up to 48h before, see policy</span></div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-3 mt-8">
+      <button onclick="window.print()" class="flex-1 border border-slate-200 text-slate-600 font-semibold rounded-lg py-2.5 text-sm">Download confirmation</button>
+      <button data-nav="#/account" class="flex-1 border border-slate-200 text-slate-600 font-semibold rounded-lg py-2.5 text-sm">View my booking</button>
+      <button data-nav="#/" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Back to home</button>
+    </div>
+  </section>`;
+}
+
+/* =========================================================
+   LOGIN MODAL
+   ========================================================= */
+function openLoginModal(message){
+  const overlay = document.createElement('div');
+  overlay.id = 'login-overlay';
+  overlay.className = 'fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4';
+  overlay.innerHTML = `
+    <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative fade-in">
+      <button data-action="close-login" class="absolute top-4 right-4 text-slate-400 hover:text-slate-600">✕</button>
+      <h2 class="text-lg font-bold text-slate-900">Welcome to FlyVenture</h2>
+      <p class="text-xs text-slate-400 mt-1">${message || 'Log in to book and manage your trips.'}</p>
+      <form id="login-form" class="mt-5 space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Full name</label>
+          <input required name="name" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm" placeholder="Aditi Sharma">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Email</label>
+          <input required type="email" name="email" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm" placeholder="you@email.com">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Password</label>
+          <input required type="password" name="password" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm" placeholder="••••••••">
+        </div>
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold rounded-lg py-2.5 text-sm transition-colors">Login / Sign up</button>
+      </form>
+      <p class="text-[11px] text-slate-400 text-center mt-3">Prototype login — any details will work.</p>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{ if(e.target===overlay) closeLoginModal(); });
+  qs('#close-login',overlay);
+  overlay.querySelector('[data-action="close-login"]').addEventListener('click', closeLoginModal);
+  overlay.querySelector('#login-form').addEventListener('submit', e=>{
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    state.user = { name: fd.get('name'), email: fd.get('email') };
+    closeLoginModal();
+    if(state.pendingBooking){
+      const { type, id, meta } = state.pendingBooking;
+      state.pendingBooking = null;
+      startBooking(type,id,meta);
+    } else {
+      render();
+    }
+  });
+}
+function closeLoginModal(){ qs('#login-overlay')?.remove(); }
+
+/* =========================================================
+   ACCOUNT DASHBOARD
+   ========================================================= */
+function renderAccount(tab){
+  const t = tab || 'trips';
+  if(!state.user){
+    return `<section class="max-w-md mx-auto px-4 py-24 text-center">
+      <h1 class="text-lg font-bold text-slate-900">You're not logged in</h1>
+      <p class="text-sm text-slate-400 mt-1">Log in to see your bookings and profile.</p>
+      <button data-action="open-login" class="mt-6 bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold rounded-lg px-5 py-2.5 transition-colors">Login / Sign up</button>
+    </section>`;
+  }
+  const menu = [['trips','My Trips'],['saved','Saved'],['profile','Profile'],['payments','Payments'],['support','Support']];
+  const bodies = {
+    trips: `
+      <h2 class="font-semibold text-slate-900 mb-4">Upcoming & past bookings</h2>
+      ${state.bookings.length===0 ? `<p class="text-sm text-slate-400">No bookings yet. <a href="#/" class="text-brand-600 font-semibold">Start exploring →</a></p>` :
+      `<div class="space-y-3">${state.bookings.map(b=>`
+        <div class="border border-slate-100 rounded-xl p-4 flex items-center justify-between gap-3">
+          <div>
+            <div class="font-semibold text-slate-800 text-sm">${b.title}</div>
+            <div class="text-xs text-slate-400">${b.sub} · Booked ${b.date}</div>
+            <div class="text-xs text-slate-400">Booking ID: ${b.id}</div>
+          </div>
+          <div class="text-right">
+            <div class="font-bold text-slate-900 text-sm">${money(b.price)}</div>
+            <span class="text-[11px] font-semibold text-emerald-600">${b.status}</span>
+          </div>
+        </div>`).join('')}</div>`}
+    `,
+    saved: `<h2 class="font-semibold text-slate-900 mb-4">Saved hotels & packages</h2><p class="text-sm text-slate-400">You haven't saved anything yet. Tap the heart icon on a hotel or package to save it here.</p>`,
+    profile: `
+      <h2 class="font-semibold text-slate-900 mb-4">Profile</h2>
+      <div class="space-y-3 max-w-sm text-sm">
+        <div><div class="text-xs text-slate-400 mb-1">Name</div><div class="font-medium text-slate-700">${state.user.name}</div></div>
+        <div><div class="text-xs text-slate-400 mb-1">Email</div><div class="font-medium text-slate-700">${state.user.email}</div></div>
+      </div>`,
+    payments: `<h2 class="font-semibold text-slate-900 mb-4">Saved payment methods</h2><p class="text-sm text-slate-400">No saved cards. Cards are added at checkout in this prototype.</p>`,
+    support: `<h2 class="font-semibold text-slate-900 mb-4">Support</h2><p class="text-sm text-slate-400">Need help with a booking? Email <span class="text-brand-600 font-medium">support@travelo.example</span> — support flows are mocked in this prototype.</p>`,
+  };
+  return `
+  <section class="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+    <div class="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-8">
+      <aside class="space-y-1">
+        <div class="flex items-center gap-2 px-2 py-3 mb-2">
+          <span class="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-semibold text-sm">${state.user.name[0]}</span>
+          <div class="text-sm font-semibold text-slate-800">${state.user.name}</div>
+        </div>
+        ${menu.map(([id,label])=>`<button data-acc-tab="${id}" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${t===id?'bg-brand-50 text-brand-700':'text-slate-500 hover:bg-slate-50'}">${label}</button>`).join('')}
+      </aside>
+      <div class="border border-slate-100 rounded-xl p-5">${bodies[t]}</div>
+    </div>
+  </section>`;
+}
+function bindAccount(){
+  qsa('[data-acc-tab]').forEach(b=>b.addEventListener('click',()=>{ state.accountTab=b.dataset.accTab; render(); }));
+}
+
+/* =========================================================
+   ADMIN PANEL
+   ========================================================= */
+function renderAdmin(section){
+  const s = section || 'overview';
+  const menu = [['overview','Overview'],['users','Users'],['hotels','Hotels'],['flights','Flights'],['packages','Packages'],['bookings','Bookings'],['reviews','Reviews']];
+  const bodies = {
+    overview: `
+      <h2 class="font-semibold text-slate-900 mb-4">Overview</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        ${[['Total bookings',state.bookings.length],['Hotels listed',HOTELS.length],['Packages listed',PACKAGES.length],['Active flights',FLIGHTS.length]].map(([l,v])=>`
+          <div class="border border-slate-100 rounded-xl p-4"><div class="text-2xl font-bold text-slate-900">${v}</div><div class="text-xs text-slate-400 mt-1">${l}</div></div>`).join('')}
+      </div>`,
+    users: `
+      <h2 class="font-semibold text-slate-900 mb-4">Users</h2>
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-2">Name</th><th>Email</th><th>Status</th></tr></thead>
+      <tbody>
+      ${(state.user? [state.user] : []).map(u=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${u.name}</td><td class="text-slate-500">${u.email}</td><td><span class="text-emerald-600 text-xs font-semibold">Active</span></td></tr>`).join('')}
+      ${['Priya Nair','Vikram Rao','Emma Wilson'].map(n=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${n}</td><td class="text-slate-500">${n.toLowerCase().replace(' ','.')}@example.com</td><td><span class="text-emerald-600 text-xs font-semibold">Active</span></td></tr>`).join('')}
+      </tbody></table>`,
+    hotels: `
+      <h2 class="font-semibold text-slate-900 mb-4">Hotels</h2>
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-2">Name</th><th>Location</th><th>Rating</th><th>Price/night</th></tr></thead>
+      <tbody>${HOTELS.map(h=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${h.name}</td><td class="text-slate-500">${h.location}</td><td class="text-slate-500">${h.rating}</td><td class="text-slate-500">${money(h.price)}</td></tr>`).join('')}</tbody></table>`,
+    flights: `
+      <h2 class="font-semibold text-slate-900 mb-4">Flights</h2>
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-2">Airline</th><th>Departure</th><th>Arrival</th><th>Price</th></tr></thead>
+      <tbody>${FLIGHTS.map(f=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${f.airline}</td><td class="text-slate-500">${f.dep}</td><td class="text-slate-500">${f.arr}</td><td class="text-slate-500">${money(f.price)}</td></tr>`).join('')}</tbody></table>`,
+    packages: `
+      <h2 class="font-semibold text-slate-900 mb-4">Packages</h2>
+      <table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-2">Name</th><th>Destination</th><th>Days</th><th>Price</th></tr></thead>
+      <tbody>${PACKAGES.map(p=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${p.name}</td><td class="text-slate-500">${p.destination}</td><td class="text-slate-500">${p.days}</td><td class="text-slate-500">${money(p.price)}</td></tr>`).join('')}</tbody></table>`,
+    bookings: `
+      <h2 class="font-semibold text-slate-900 mb-4">Bookings</h2>
+      ${state.bookings.length===0 ? `<p class="text-sm text-slate-400">No bookings recorded yet in this session.</p>` :
+      `<table class="w-full text-sm"><thead><tr class="text-left text-xs text-slate-400 border-b border-slate-100"><th class="py-2">Booking ID</th><th>Service</th><th>Traveller</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>${state.bookings.map(b=>`<tr class="border-b border-slate-50"><td class="py-2 font-medium text-slate-700">${b.id}</td><td class="text-slate-500">${b.title}</td><td class="text-slate-500">${b.traveller.name}</td><td class="text-slate-500">${money(b.price)}</td><td><span class="text-emerald-600 text-xs font-semibold">${b.status}</span></td></tr>`).join('')}</tbody></table>`}`,
+    reviews: `<h2 class="font-semibold text-slate-900 mb-4">Reviews</h2><p class="text-sm text-slate-400">Review moderation queue is empty — this is where flagged guest reviews would appear.</p>`,
+  };
+  return `
+  <section class="max-w-6xl mx-auto px-4 sm:px-6 py-8">
+    <h1 class="text-xl font-bold text-slate-900 mb-6">Admin panel</h1>
+    <div class="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-8">
+      <aside class="space-y-1">
+        ${menu.map(([id,label])=>`<button data-admin-tab="${id}" class="w-full text-left px-3 py-2 rounded-lg text-sm font-medium ${s===id?'bg-brand-50 text-brand-700':'text-slate-500 hover:bg-slate-50'}">${label}</button>`).join('')}
+      </aside>
+      <div class="border border-slate-100 rounded-xl p-5 overflow-x-auto">${bodies[s]}</div>
+    </div>
+  </section>`;
+}
+function bindAdmin(){
+  qsa('[data-admin-tab]').forEach(b=>b.addEventListener('click',()=>{ state.adminTab=b.dataset.adminTab; render(); }));
+}
+
+/* =========================================================
+   ROUTER
+   ========================================================= */
+function bindGlobalNav(){
+  qsa('[data-nav]').forEach(el=>el.addEventListener('click',(e)=>{ e.preventDefault(); go(el.dataset.nav); }));
+  qsa('[data-action="open-login"]').forEach(el=>el.addEventListener('click',()=>openLoginModal()));
+  qsa('[data-action="logout"]').forEach(el=>el.addEventListener('click',()=>{ state.user=null; go('#/'); }));
+  qsa('[data-action="toggle-mobile-nav"]').forEach(el=>el.addEventListener('click',()=>{ qs('#mobile-nav').classList.toggle('hidden'); }));
+  qsa('[data-action="toggle-theme"]').forEach(el=>el.addEventListener('click', toggleDarkMode));
+  qsa('[data-goto-destination]').forEach(el=>el.addEventListener('click',()=>{
+    const d = el.dataset.gotoDestination;
+    state.filters.packageCity = d; state.filters.hotel.city = d;
+    go('#/packages');
+  }));
+  qs('[data-action="search-flights"]')?.addEventListener('click',()=>{
+    const from = qs('[data-field="flight-from"]')?.value || state.flightSearch.from;
+    const to = qs('[data-field="flight-to"]')?.value || state.flightSearch.to;
+    const travellers = +(qs('[data-field="flight-travellers"]')?.value || state.flightSearch.travellers);
+    const cabinClass = qs('[data-field="flight-cabin"]')?.value || state.flightSearch.cabinClass;
+    state.flightSearch = { from, to, travellers, cabinClass };
+    go('#/flights');
+  });
+  qs('[data-action="search-hotels"]')?.addEventListener('click',()=>{
+    const dest = qs('[data-field="hotel-dest"]')?.value;
+    if(dest) state.filters.hotel.city = dest;
+    go('#/hotels');
+  });
+  qs('[data-action="search-packages"]')?.addEventListener('click',()=>{
+    const dest = qs('[data-field="package-dest"]')?.value;
+    if(dest) state.filters.packageCity = dest;
+    go('#/packages');
+  });
+  qsa('[data-action="book"]').forEach(el=>el.addEventListener('click',()=>{
+    const meta = el.dataset.meta ? JSON.parse(el.dataset.meta.replace(/&apos;/g,"'")) : null;
+    startBooking(el.dataset.type, el.dataset.id, meta);
+  }));
+}
+
+function render(){
+  const hash = location.hash || '#/';
+  const parts = hash.replace('#','').split('/').filter(Boolean); // e.g. ['hotel','h1']
+  let body = '';
+
+  if(parts.length===0){ body = renderHome(); }
+  else if(parts[0]==='flights'){ body = renderFlights(); }
+  else if(parts[0]==='hotels'){ body = renderHotelsResults(); }
+  else if(parts[0]==='hotel'){ body = renderHotelDetail(parts[1]); }
+  else if(parts[0]==='cabs'){ body = renderCabs(); }
+  else if(parts[0]==='packages'){ body = renderPackages(); }
+  else if(parts[0]==='package'){ body = renderPackageDetail(parts[1]); }
+  else if(parts[0]==='about'){ body = renderAbout(); }
+  else if(parts[0]==='activities'){ body = renderActivities(state.activityCat); }
+  else if(parts[0]==='activity'){ body = renderActivityDetail(parts[1]); }
+  else if(parts[0]==='guides'){ body = renderGuides(); }
+  else if(parts[0]==='guide'){ body = renderGuideDetail(parts[1]); }
+  else if(parts[0]==='more'){ body = renderMorePlaceholder(parts[1]); }
+  else if(parts[0]==='booking'){ body = renderBooking(); }
+  else if(parts[0]==='confirmation'){ body = renderConfirmation(); }
+  else if(parts[0]==='account'){ body = renderAccount(state.accountTab); }
+  else if(parts[0]==='admin'){ body = renderAdmin(state.adminTab); }
+  else { body = notFound('Page'); }
+
+  document.getElementById('app').innerHTML = renderHeader() + `<main class="min-h-[60vh] fade-in">${body}</main>` + renderFooter();
+
+  bindGlobalNav();
+  if(parts.length===0) bindHome();
+  if(parts[0]==='flights') bindFlights();
+  if(parts[0]==='hotels') bindHotelsResults();
+  if(parts[0]==='packages') bindPackages();
+  if(parts[0]==='activities') bindActivities();
+  if(parts[0]==='booking') bindBooking();
+  if(parts[0]==='account') bindAccount();
+  if(parts[0]==='admin') bindAdmin();
+}
+
+window.addEventListener('hashchange', render);
+window.addEventListener('DOMContentLoaded', ()=>{
+  applyTheme();
+  render();
+  const btn = document.getElementById('scroll-top-btn');
+  window.addEventListener('scroll', ()=>{
+    const show = window.scrollY > 500;
+    btn.classList.toggle('opacity-0', !show);
+    btn.classList.toggle('pointer-events-none', !show);
+    btn.classList.toggle('translate-y-2', !show);
+  });
+  btn.addEventListener('click', ()=> window.scrollTo({top:0, behavior:'smooth'}));
+});
+</script>
+</body>
+</html>
